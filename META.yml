@@ -1,0 +1,8 @@
+--- #YAML:1.0
+name: Net-Amazon-S3
+version: 0.30
+author:
+  - Leon Brocard <acme@astray.com> and unknown Amazon Digital Services programmers.
+abstract: Use the Amazon S3 - Simple Storage Service
+license: perl
+generated_by: Module::Build version 0.2612, without YAML.pm

@@ -1,8 +1,9 @@
 --- #YAML:1.0
 name: Net-Amazon-S3
-version: 0.30
+version: 0.31
 author:
   - Leon Brocard <acme@astray.com> and unknown Amazon Digital Services programmers.
+  - Brad Fitzpatrick <brad@danga.com> - return values, Bucket object
 abstract: Use the Amazon S3 - Simple Storage Service
 license: perl
 generated_by: Module::Build version 0.2612, without YAML.pm

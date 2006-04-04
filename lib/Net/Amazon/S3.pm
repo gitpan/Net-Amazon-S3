@@ -5,14 +5,16 @@ use Carp;
 use Digest::HMAC_SHA1;
 use HTTP::Date;
 use MIME::Base64 qw(encode_base64);
+use Net::Amazon::S3::Bucket;
 use LWP::UserAgent;
 use URI::Escape;
 use XML::LibXML;
 use XML::LibXML::XPathContext;
+
 use base qw(Class::Accessor::Fast);
 __PACKAGE__->mk_accessors(
-    qw(libxml aws_access_key_id aws_secret_access_key secure ua));
-our $VERSION = '0.30';
+    qw(libxml aws_access_key_id aws_secret_access_key secure ua err errstr timeout));
+our $VERSION = '0.31';
 
 my $AMAZON_HEADER_PREFIX = 'x-amz-';
 my $METADATA_PREFIX      = 'x-amz-meta-';
@@ -25,29 +27,35 @@ sub new {
     die "No aws_secret_access_key" unless $self->aws_secret_access_key;
 
     $self->secure(0) if not defined $self->secure;
+    $self->timeout(30) if not defined $self->timeout;
 
     my $ua = LWP::UserAgent->new;
-    $ua->timeout(30);
+    $ua->timeout($self->timeout);
     $self->ua($ua);
     $self->libxml( XML::LibXML->new );
     return $self;
 }
 
+# returns undef on error, else hashref of results
 sub buckets {
     my $self = shift;
-    my $xpc  = $self->_make_request( 'GET', '', {} );
+    my $xpc  = $self->_send_request( 'GET', '', {} );
+
+    return undef unless $xpc && !$self->_remember_errors($xpc);
 
     my $owner_id          = $xpc->findvalue("//s3:Owner/s3:ID");
     my $owner_displayname = $xpc->findvalue("//s3:Owner/s3:DisplayName");
 
-    #    warn "$owner_id / $owner_displayname";
     my @buckets;
     foreach my $node ( $xpc->findnodes(".//s3:Bucket") ) {
         push @buckets,
-            {
-            bucket        => $xpc->findvalue( ".//s3:Name",         $node ),
-            creation_date => $xpc->findvalue( ".//s3:CreationDate", $node ),
-            };
+            Net::Amazon::S3::Bucket->new(
+            {   bucket        => $xpc->findvalue( ".//s3:Name", $node ),
+                creation_date =>
+                    $xpc->findvalue( ".//s3:CreationDate", $node ),
+                account => $self,
+            }
+            );
 
     }
     return {
@@ -57,20 +65,36 @@ sub buckets {
     };
 }
 
+# returns 0 on failure, Net::Amazon::S3::Bucket object on success
 sub add_bucket {
     my ( $self, $conf ) = @_;
     my $bucket = $conf->{bucket};
     croak 'must specify bucket' unless $bucket;
-    my $xpc = $self->_make_request( 'PUT', $bucket, {} );
+    return 0 unless $self->_send_request_expect_nothing( 'PUT', $bucket, {} );
+    return $self->bucket($bucket);
 }
 
+# returns (unverified) bucket object from an account
+sub bucket {
+    my ( $self, $bucketname ) = @_;
+    return Net::Amazon::S3::Bucket->new(
+        { bucket => $bucketname, account => $self } );
+}
+
+# returns bool, given either { bucket => $str } or Net::Amazon::S3::Bucket object
 sub delete_bucket {
     my ( $self, $conf ) = @_;
-    my $bucket = $conf->{bucket};
+    my $bucket;
+    if ( eval { $conf->isa("Net::S3::Amazon::Bucket"); } ) {
+        $bucket = $conf->bucket;
+    } else {
+        $bucket = $conf->{bucket};
+    }
     croak 'must specify bucket' unless $bucket;
-    my $xpc = $self->_make_request( 'DELETE', $bucket, {} );
+    return $self->_send_request_expect_nothing( 'DELETE', $bucket, {} );
 }
 
+# returns undef on error, hashref of data on success
 sub list_bucket {
     my ( $self, $conf ) = @_;
     my $bucket = $conf->{bucket};
@@ -85,7 +109,8 @@ sub list_bucket {
             map { "$_=" . urlencode( $conf->{$_} ) } keys %$conf );
     }
 
-    my $xpc = $self->_make_request( 'GET', $path, {} );
+    my $xpc = $self->_send_request( 'GET', $path, {} );
+    return undef unless $xpc && !$self->_remember_errors($xpc);
 
     my $return = {
         bucket       => $xpc->findvalue("//s3:ListBucketResult/s3:Name"),
@@ -122,72 +147,43 @@ sub list_bucket {
     return $return;
 }
 
+sub _compat_bucket {
+    my ( $self, $conf ) = @_;
+    return Net::Amazon::S3::Bucket->new(
+        { account => $self, bucket => delete $conf->{bucket} } );
+}
+
+# compat wrapper; deprecated as of 2005-03-23
 sub add_key {
     my ( $self, $conf ) = @_;
-    my $bucket = $conf->{bucket};
-    my $key    = $conf->{key};
-    my $value  = $conf->{value};
-    croak 'must specify bucket' unless $bucket;
-    croak 'must specify key'    unless $key;
-    delete $conf->{bucket};
-    delete $conf->{key};
-    delete $conf->{value};
-
-    $key = $self->_urlencode($key);
-
-    my $xpc = $self->_make_request( 'PUT', "$bucket/$key", $conf, $value );
+    my $bucket = $self->_compat_bucket($conf);
+    my $key    = delete $conf->{key};
+    my $value  = delete $conf->{value};
+    return $bucket->add_key( $key, $value, $conf );
 }
 
+# compat wrapper; deprecated as of 2005-03-23
 sub get_key {
     my ( $self, $conf ) = @_;
-    my $bucket = $conf->{bucket};
-    my $key    = $conf->{key};
-    my $method = $conf->{_method} || 'GET';
-    croak 'must specify bucket' unless $bucket;
-    croak 'must specify key'    unless $key;
-    delete $conf->{bucket};
-    delete $conf->{key};
-    delete $conf->{_method};
-
-    $key = $self->_urlencode($key);
-
-    my $response = $self->_make_request( $method, "$bucket/$key", $conf );
-
-    #    warn $response->as_string;
-
-    my $etag = $response->header('ETag');
-    $etag =~ s/^"//;
-    $etag =~ s/"$//;
-
-    my $return = {
-        content_type => $response->content_type,
-        etag         => $etag,
-        value        => $response->content,
-    };
-
-    foreach my $header ( $response->headers->header_field_names ) {
-        next unless $header =~ /x-amz-meta-/i;
-        $return->{ lc $header } = $response->header($header);
-    }
-
-    return $return;
+    my $bucket = $self->_compat_bucket($conf);
+    return $bucket->get_key( $conf->{key} );
 }
 
+# compat wrapper; deprecated as of 2005-03-23
 sub head_key {
     my ( $self, $conf ) = @_;
-    $conf->{_method} = 'HEAD';
-    return $self->get_key($conf);
+    my $bucket = $self->_compat_bucket($conf);
+    return $bucket->head_key( $conf->{key} );
 }
 
+# compat wrapper; deprecated as of 2005-03-23
 sub delete_key {
     my ( $self, $conf ) = @_;
-    my $bucket = $conf->{bucket};
-    croak 'must specify bucket' unless $bucket;
-    my $key = $conf->{key};
-    croak 'must specify key' unless $key;
-    my $xpc = $self->_make_request( 'DELETE', "$bucket/$key", {} );
+    my $bucket = $self->_compat_bucket($conf);
+    return $bucket->delete_key( $conf->{key} );
 }
 
+# make the HTTP::Request object
 sub _make_request {
     my ( $self, $method, $path, $headers, $data, $metadata ) = @_;
     croak 'must specify method' unless $method;
@@ -204,26 +200,59 @@ sub _make_request {
     my $request  = HTTP::Request->new( $method, $url, $http_headers );
     $request->content($data);
 
-    #    warn $request->as_string;
-    my $response = $self->ua->request($request);
+    my $req_as = $request->as_string;
+    $req_as =~ s/[^\n\r\x20-\x7f]/?/g;
+    $req_as = substr( $req_as, 0, 1024 ) . "\n\n";
 
-    #    warn $response->as_string;
+    return $request;
+}
 
-    my $content = $response->content;
-
-    my ($package,   $filename, $line,       $subroutine, $hasargs,
-        $wantarray, $evaltext, $is_require, $hints,      $bitmask
-        )
-        = caller(1);
-    if ( $subroutine eq 'Net::Amazon::S3::get_key' ) {
-        if ( $response->code == 404 ) {
-            die "key not found";
-        } else {
-            return $response;
-        }
+# $self->_send_request($HTTP::Request)
+# $self->_send_request(@params_to_make_request)
+sub _send_request {
+    my $self = shift;
+    my $request;
+    if ( @_ == 1 ) {
+        $request = shift;
+    } else {
+        $request = $self->_make_request(@_);
     }
+
+    my $response = $self->_do_http($request);
+    my $content  = $response->content;
+
     return $content unless $response->content_type eq 'application/xml';
     return unless $content;
+    return $self->_xpc_of_content($content);
+}
+
+# centralize all HTTP work, for debugging
+sub _do_http {
+    my ( $self, $request ) = @_;
+
+    # convenient time to reset any error conditions
+    $self->err(undef);
+    $self->errstr(undef);
+
+    return $self->ua->request($request);
+}
+
+sub _send_request_expect_nothing {
+    my $self    = shift;
+    my $request = $self->_make_request(@_);
+
+    my $response = $self->_do_http($request);
+    my $content  = $response->content;
+
+    return 1 if $response->code =~ /^2\d\d$/;
+
+    # anything else is a failure, and we save the parsed result
+    $self->_remember_errors( $response->content );
+    return 0;
+}
+
+sub _xpc_of_content {
+    my ( $self, $content ) = @_;
     my $doc = $self->libxml->parse_string($content);
 
     # warn $doc->toString(2);
@@ -231,12 +260,20 @@ sub _make_request {
     my $xpc = XML::LibXML::XPathContext->new($doc);
     $xpc->registerNs( 's3', 'http://s3.amazonaws.com/doc/2006-03-01/' );
 
-    if ( $xpc->findnodes("//Error") ) {
-        carp 'Net::Amazon::S3 error: '
-            . $xpc->findvalue("//Error/Code") . " - "
-            . $xpc->findvalue("//Error/Message");
-    }
     return $xpc;
+}
+
+# returns 1 if errors were found
+sub _remember_errors {
+    my ( $self, $src ) = @_;
+    my $xpc = ref $src ? $src : $self->_xpc_of_content($src);
+
+    if ( $xpc->findnodes("//Error") ) {
+        $self->err( $xpc->findvalue("//Error/Code") );
+        $self->errstr( $xpc->findvalue("//Error/Message") );
+        return 1;
+    }
+    return 0;
 }
 
 sub _add_auth_header {
@@ -285,7 +322,7 @@ sub _canonical_string {
             or $lk eq 'date'
             or $lk =~ /^$AMAZON_HEADER_PREFIX/ )
         {
-            $interesting_headers{$lk} = $value;
+            $interesting_headers{$lk} = $self->_trim($value);
         }
     }
 
@@ -322,6 +359,13 @@ sub _canonical_string {
     }
 
     return $buf;
+}
+
+sub _trim {
+    my ( $self, $value ) = @_;
+    $value =~ s/^\s+//;
+    $value =~ s/\s+$//;
+    return $value;
 }
 
 # finds the hmac-sha1 hash of the canonical string and the aws secret access key and then
@@ -361,6 +405,7 @@ Net::Amazon::S3 - Use the Amazon S3 - Simple Storage Service
           aws_secret_access_key => $aws_secret_access_key
       }
   );
+  # you can also pass a timeout in seconds
 
   # list all buckets that i own
   my $response = $s3->buckets;
@@ -370,13 +415,19 @@ Net::Amazon::S3 - Use the Amazon S3 - Simple Storage Service
 
   # create a bucket
   my $bucketname = $aws_access_key_id . '-net-amazon-s3-test';
-  $s3->add_bucket( { bucket => $bucketname } );
-  $response = $s3->buckets;
-  ok( ( grep { $_->{bucket} eq $bucketname } @{ $response->{buckets} } );
+  my $bucket_obj = $s3->add_bucket( { bucket => $bucketname } )
+    or die $s3->err . ": " . $s3->errstr;
+  is(ref $bucket_obj, "Net::Amazon::S3::Bucket");
+
+  # another way to get a bucket object (does no network I/O,
+  # assumes it already exists).  Read Net::Amazon::S3::Bucket.
+  $bucket_obj = $s3->bucket("named_bucket");
+  is( ref $bucket_obj, "Net::Amazon::S3::Bucket" );
 
   # fetch contents of the bucket
   # note prefix, marker, max_keys options can be passed in
-  $response = $s3->list_bucket( { bucket => $bucketname } );
+  $response = $bucket->list
+      or die $s3->err . ": " . $s3->errstr;
   is( $response->{bucket},       $bucketname );
   is( $response->{prefix},       '' );
   is( $response->{marker},       '' );
@@ -384,20 +435,17 @@ Net::Amazon::S3 - Use the Amazon S3 - Simple Storage Service
   is( $response->{is_truncated}, 0 );
   is_deeply( $response->{keys}, [] );
 
-  # store a key with a content-type and some metadata
+  # store a key with a content-type and some optional metadata
   my $keyname = 'testing.txt';
   my $value   = 'T';
-  $s3->add_key(
-      {   bucket              => $bucketname,
-          key                 => $keyname,
-          value               => $value,
-          content_type        => 'text/plain',
-          'x-amz-meta-colour' => 'orange',
-      }
-  );
+  $bucket->add_key($key, $value, {
+    content_type        => 'text/plain',
+    'x-amz-meta-colour' => 'orange',
+  });
 
   # list keys in the bucket
-  $response = $s3->list_bucket( { bucket => $bucketname } );
+  $response = $bucket->list
+      or die $s3->err . ": " . $s3->errstr;
   is( $response->{bucket},       $bucketname );
   is( $response->{prefix},       '' );
   is( $response->{marker},       '' );
@@ -413,25 +461,7 @@ Net::Amazon::S3 - Use the Amazon S3 - Simple Storage Service
   is( $key->{owner_id}, '46a801915a1711f...');
   is( $key->{owner_displayname}, '_acme_' );
 
-  # fetch a key
-  $response = $s3->get_key( { bucket => $bucketname, key => $keyname } );
-  is( $response->{content_type},        'text/plain' );
-  is( $response->{value},               'T' );
-  is( $response->{etag},                'b9ece18c950afbfa6b0fdbfa4ff731d3' );
-  is( $response->{'x-amz-meta-colour'}, 'orange' );
-
-  # fetch a key's metadata
-  $response = $s3->head_key( { bucket => $bucketname, key => $keyname } );
-  is( $response->{content_type},        'text/plain' );
-  is( $response->{value},               '' );
-  is( $response->{etag},                'b9ece18c950afbfa6b0fdbfa4ff731d3' );
-  is( $response->{'x-amz-meta-colour'}, 'orange' );
-
-  # delete a key
-  $s3->delete_key( { bucket => $bucketname, key => $keyname } );
-
-  # finally delete the bucket
-  $s3->delete_bucket( { bucket => $bucketname } );
+  # see more docs in Net::Amazon::S3::Bucket
 
 =head1 DESCRIPTION
 
@@ -476,3 +506,10 @@ following notice:
 =head1 AUTHOR
 
 Leon Brocard <acme@astray.com> and unknown Amazon Digital Services programmers.
+
+Brad Fitzpatrick <brad@danga.com> - return values, Bucket object
+
+=head1 SEE ALSO
+
+L<Net::Amazon::S3::Bucket>
+

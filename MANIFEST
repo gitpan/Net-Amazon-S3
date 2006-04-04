@@ -2,6 +2,7 @@ Build.PL
 CHANGES
 Makefile.PL
 lib/Net/Amazon/S3.pm
+lib/Net/Amazon/S3/Bucket.pm
 MANIFEST			This list of files
 README
 t/pod.t

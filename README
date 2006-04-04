@@ -10,6 +10,7 @@ SYNOPSIS
               aws_secret_access_key => $aws_secret_access_key
           }
       );
+      # you can also pass a timeout in seconds
 
       # list all buckets that i own
       my $response = $s3->buckets;
@@ -19,13 +20,19 @@ SYNOPSIS
 
       # create a bucket
       my $bucketname = $aws_access_key_id . '-net-amazon-s3-test';
-      $s3->add_bucket( { bucket => $bucketname } );
-      $response = $s3->buckets;
-      ok( ( grep { $_->{bucket} eq $bucketname } @{ $response->{buckets} } );
+      my $bucket_obj = $s3->add_bucket( { bucket => $bucketname } )
+        or die $s3->err . ": " . $s3->errstr;
+      is(ref $bucket_obj, "Net::Amazon::S3::Bucket");
+
+      # another way to get a bucket object (does no network I/O,
+      # assumes it already exists).  Read Net::Amazon::S3::Bucket.
+      $bucket_obj = $s3->bucket("named_bucket");
+      is( ref $bucket_obj, "Net::Amazon::S3::Bucket" );
 
       # fetch contents of the bucket
       # note prefix, marker, max_keys options can be passed in
-      $response = $s3->list_bucket( { bucket => $bucketname } );
+      $response = $bucket->list
+          or die $s3->err . ": " . $s3->errstr;
       is( $response->{bucket},       $bucketname );
       is( $response->{prefix},       '' );
       is( $response->{marker},       '' );
@@ -33,20 +40,17 @@ SYNOPSIS
       is( $response->{is_truncated}, 0 );
       is_deeply( $response->{keys}, [] );
 
-      # store a key with a content-type and some metadata
+      # store a key with a content-type and some optional metadata
       my $keyname = 'testing.txt';
       my $value   = 'T';
-      $s3->add_key(
-          {   bucket              => $bucketname,
-              key                 => $keyname,
-              value               => $value,
-              content_type        => 'text/plain',
-              'x-amz-meta-colour' => 'orange',
-          }
-      );
+      $bucket->add_key($key, $value, {
+        content_type        => 'text/plain',
+        'x-amz-meta-colour' => 'orange',
+      });
 
       # list keys in the bucket
-      $response = $s3->list_bucket( { bucket => $bucketname } );
+      $response = $bucket->list
+          or die $s3->err . ": " . $s3->errstr;
       is( $response->{bucket},       $bucketname );
       is( $response->{prefix},       '' );
       is( $response->{marker},       '' );
@@ -62,25 +66,7 @@ SYNOPSIS
       is( $key->{owner_id}, '46a801915a1711f...');
       is( $key->{owner_displayname}, '_acme_' );
 
-      # fetch a key
-      $response = $s3->get_key( { bucket => $bucketname, key => $keyname } );
-      is( $response->{content_type},        'text/plain' );
-      is( $response->{value},               'T' );
-      is( $response->{etag},                'b9ece18c950afbfa6b0fdbfa4ff731d3' );
-      is( $response->{'x-amz-meta-colour'}, 'orange' );
-
-      # fetch a key's metadata
-      $response = $s3->head_key( { bucket => $bucketname, key => $keyname } );
-      is( $response->{content_type},        'text/plain' );
-      is( $response->{value},               '' );
-      is( $response->{etag},                'b9ece18c950afbfa6b0fdbfa4ff731d3' );
-      is( $response->{'x-amz-meta-colour'}, 'orange' );
-
-      # delete a key
-      $s3->delete_key( { bucket => $bucketname, key => $keyname } );
-
-      # finally delete the bucket
-      $s3->delete_bucket( { bucket => $bucketname } );
+      # see more docs in Net::Amazon::S3::Bucket
 
 DESCRIPTION
     This module provides a Perlish interface to Amazon S3. From the
@@ -123,4 +109,9 @@ ABOUT
 AUTHOR
     Leon Brocard <acme@astray.com> and unknown Amazon Digital Services
     programmers.
+
+    Brad Fitzpatrick <brad@danga.com> - return values, Bucket object
+
+SEE ALSO
+    Net::Amazon::S3::Bucket
 

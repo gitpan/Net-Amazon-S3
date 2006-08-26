@@ -1,6 +1,149 @@
 package Net::Amazon::S3;
 use strict;
 use warnings;
+
+=head1 NAME
+
+Net::Amazon::S3 - Use the Amazon S3 - Simple Storage Service
+
+=head1 SYNOPSIS
+
+  #!/usr/bin/perl
+  use warnings;
+  use strict;
+  use Test::More qw/no_plan/;
+  
+  # this synopsis is presented as a test file
+
+  use Net::Amazon::S3;
+  
+  
+  use vars qw/$OWNER_ID $OWNER_DISPLAYNAME/;
+  
+  my $aws_access_key_id     = "Fill me in!";
+  my $aws_secret_access_key = "Fill me in too!";
+  
+  my $s3 = Net::Amazon::S3->new(
+      {   aws_access_key_id     => $aws_access_key_id,
+          aws_secret_access_key => $aws_secret_access_key
+      }
+  );
+  
+  # you can also pass a timeout in seconds
+  
+  # list all buckets that i own
+  my $response = $s3->buckets;
+  
+  TODO: {
+      local $TODO = "These tests only work if you're leon";
+      $OWNER_ID          = $response->{owner_id};
+      $OWNER_DISPLAYNAME = $response->{owner_displayname};
+  
+      is( $response->{owner_id},          '46a801915a1711f...' );
+      is( $response->{owner_displayname}, '_acme_' );
+      is_deeply( $response->{buckets}, [] );
+  }
+  
+  # create a bucket
+  my $bucketname = $aws_access_key_id . '-net-amazon-s3-test';
+  my $bucket_obj = $s3->add_bucket( { bucket => $bucketname } )
+      or die $s3->err . ": " . $s3->errstr;
+  is( ref $bucket_obj, "Net::Amazon::S3::Bucket" );
+  
+  # another way to get a bucket object (does no network I/O,
+  # assumes it already exists).  Read Net::Amazon::S3::Bucket.
+  $bucket_obj = $s3->bucket($bucketname);
+  is( ref $bucket_obj, "Net::Amazon::S3::Bucket" );
+  
+  # fetch contents of the bucket
+  # note prefix, marker, max_keys options can be passed in
+  $response = $bucket_obj->list
+      or die $s3->err . ": " . $s3->errstr;
+  is( $response->{bucket},       $bucketname );
+  is( $response->{prefix},       '' );
+  is( $response->{marker},       '' );
+  is( $response->{max_keys},     1_000 );
+  is( $response->{is_truncated}, 0 );
+  is_deeply( $response->{keys}, [] );
+  
+  # store a key with a content-type and some optional metadata
+  my $keyname = 'testing.txt';
+  my $value   = 'T';
+  $bucket_obj->add_key(
+      $keyname, $value,
+      {   content_type        => 'text/plain',
+          'x-amz-meta-colour' => 'orange',
+      }
+  );
+  
+  # list keys in the bucket
+  $response = $bucket_obj->list
+      or die $s3->err . ": " . $s3->errstr;
+  is( $response->{bucket},       $bucketname );
+  is( $response->{prefix},       '' );
+  is( $response->{marker},       '' );
+  is( $response->{max_keys},     1_000 );
+  is( $response->{is_truncated}, 0 );
+  my @keys = @{ $response->{keys} };
+  is( @keys, 1 );
+  my $key = $keys[0];
+  is( $key->{key}, $keyname );
+  
+  # the etag is the MD5 of the value
+  is( $key->{etag}, 'b9ece18c950afbfa6b0fdbfa4ff731d3' );
+  is( $key->{size}, 1 );
+  
+  is( $key->{owner_id},          $OWNER_ID );
+  is( $key->{owner_displayname}, $OWNER_DISPLAYNAME );
+  
+  # You can't delete a bucket with things in it
+  ok( !$bucket_obj->delete_bucket() );
+  
+  $bucket_obj->delete_key($keyname);
+  
+  # fetch contents of the bucket
+  # note prefix, marker, max_keys options can be passed in
+  $response = $bucket_obj->list
+      or die $s3->err . ": " . $s3->errstr;
+  is( $response->{bucket},       $bucketname );
+  is( $response->{prefix},       '' );
+  is( $response->{marker},       '' );
+  is( $response->{max_keys},     1_000 );
+  is( $response->{is_truncated}, 0 );
+  is_deeply( $response->{keys}, [] );
+  
+  ok( $bucket_obj->delete_bucket() );
+  
+  # see more docs in Net::Amazon::S3::Bucket
+  
+=head1 DESCRIPTION
+
+This module provides a Perlish interface to Amazon S3. From the
+developer blurb: "Amazon S3 is storage for the Internet. It is
+designed to make web-scale computing easier for developers. Amazon S3
+provides a simple web services interface that can be used to store and
+retrieve any amount of data, at any time, from anywhere on the web. It
+gives any developer access to the same highly scalable, reliable,
+fast, inexpensive data storage infrastructure that Amazon uses to run
+its own global network of web sites. The service aims to maximize
+benefits of scale and to pass those benefits on to developers".
+
+To find out more about S3, please visit: http://s3.amazonaws.com/
+
+To use this module you will need to sign up to Amazon Web Services and
+provide an "Access Key ID" and " Secret Access Key". If you use this
+module, you will incurr costs as specified by Amazon. Please check the
+costs. If you use this module with your Access Key ID and Secret
+Access Key you must be responsible for these costs.
+
+I highly recommend reading all about S3, but in a nutshell data is
+stored in values. Values are referenced by keys, and keys are stored
+in buckets. Bucket names are global.
+
+Some features, such as ACLs, are not yet implemented. Patches welcome!
+
+=cut
+
 use Carp;
 use Digest::HMAC_SHA1;
 use HTTP::Date;
@@ -13,11 +156,52 @@ use XML::LibXML::XPathContext;
 
 use base qw(Class::Accessor::Fast);
 __PACKAGE__->mk_accessors(
-    qw(libxml aws_access_key_id aws_secret_access_key secure ua err errstr timeout));
-our $VERSION = '0.32';
+    qw(libxml aws_access_key_id aws_secret_access_key secure ua err errstr timeout)
+);
+our $VERSION = '0.33';
 
 my $AMAZON_HEADER_PREFIX = 'x-amz-';
 my $METADATA_PREFIX      = 'x-amz-meta-';
+my $KEEP_ALIVE_CACHESIZE = 10;
+
+=head1 METHODS
+
+=head2 new 
+
+Create a new S3 client object. Takes some arguments:
+
+=over
+
+=item aws_access_key_id 
+
+Use your Access Key ID as the value of the AWSAccessKeyId parameter
+in requests you send to Amazon Web Services (when required). Your
+Access Key ID identifies you as the party responsible for the
+request.
+
+=item aws_secret_access_key 
+
+Since your Access Key ID is not encrypted in requests to AWS, it
+could be discovered and used by anyone. Services that are not free
+require you to provide additional information, a request signature,
+to verify that a request containing your unique Access Key ID could
+only have come from you.
+
+DO NOT INCLUDE THIS IN SCRIPTS OR APPLICATIONS YOU DISTRIBUTE. YOU'LL BE SORRY
+
+=item secure 
+
+Set this to C<1> if you want to use SSL-encrypted connections when talking
+to S3. Defaults to C<0>.
+
+=item timeout
+
+How many seconds should your script wait before bailing on a request to S3? Defaults
+to 30.
+
+=back
+
+=cut
 
 sub new {
     my $class = shift;
@@ -26,17 +210,22 @@ sub new {
     die "No aws_access_key_id"     unless $self->aws_access_key_id;
     die "No aws_secret_access_key" unless $self->aws_secret_access_key;
 
-    $self->secure(0) if not defined $self->secure;
+    $self->secure(0)   if not defined $self->secure;
     $self->timeout(30) if not defined $self->timeout;
 
-    my $ua = LWP::UserAgent->new;
-    $ua->timeout($self->timeout);
+    my $ua = LWP::UserAgent->new( keep_alive => $KEEP_ALIVE_CACHESIZE );
+    $ua->timeout( $self->timeout );
     $self->ua($ua);
     $self->libxml( XML::LibXML->new );
     return $self;
 }
 
-# returns undef on error, else hashref of results
+=head2 buckets
+
+Returns undef on error, else hashref of results
+
+=cut
+
 sub buckets {
     my $self = shift;
     my $xpc  = $self->_send_request( 'GET', '', {} );
@@ -65,7 +254,22 @@ sub buckets {
     };
 }
 
-# returns 0 on failure, Net::Amazon::S3::Bucket object on success
+=head2 add_bucket 
+
+Takes a hashref:
+
+=over
+
+=item bucket
+
+The name of the bucket you want to add
+
+=back
+
+Returns 0 on failure, Net::Amazon::S3::Bucket object on success
+
+=cut
+
 sub add_bucket {
     my ( $self, $conf ) = @_;
     my $bucket = $conf->{bucket};
@@ -74,14 +278,38 @@ sub add_bucket {
     return $self->bucket($bucket);
 }
 
-# returns (unverified) bucket object from an account
+=head2 bucket BUCKET
+
+Takes a scalar argument, the name of the bucket you're creating
+
+Returns an (unverified) bucket object from an account. Does no network access.
+
+=cut
+
 sub bucket {
     my ( $self, $bucketname ) = @_;
     return Net::Amazon::S3::Bucket->new(
         { bucket => $bucketname, account => $self } );
 }
 
-# returns bool, given either { bucket => $str } or Net::Amazon::S3::Bucket object
+=head2 delete_bucket
+
+Takes either a L<Net::Amazon::S3::Bucket> object or a hashref containing 
+
+=over
+
+=item bucket
+
+The name of the bucket to remove
+
+=back
+
+Returns false (and fails) if the bucket isn't empty.
+
+Returns true if the bucket is successfully deleted.
+
+=cut
+
 sub delete_bucket {
     my ( $self, $conf ) = @_;
     my $bucket;
@@ -94,7 +322,48 @@ sub delete_bucket {
     return $self->_send_request_expect_nothing( 'DELETE', $bucket, {} );
 }
 
-# returns undef on error, hashref of data on success
+=head2 list_bucket
+
+List all keys in this bucket.
+
+Takes a hashref containing a single key:
+
+=over
+
+=item bucket
+
+The name of the bucket you want to list keys on
+
+=back
+
+Returns undef on error and a hashref of data on success:
+
+The hashref looks like this:
+
+  {
+        bucket       => $bucket_name,
+        prefix       => $bucket_prefix, 
+        marker       => $bucket_marker,
+        max_keys     => $bucket_max_keys,
+        is_truncated => $bucket_is_truncated_boolean
+        keys          => [$key1,$key2,...]
+   }
+        
+Each key looks like this:
+
+     {
+        key           => $key,
+        last_modified => $last_mod_date,
+        etag          => $etag,
+        size          => $size, # Bytes?
+        storage_class => $storage_class # Doc?
+        owner_id      => $owner_id,
+        owner_displayname => $owner_name
+    }
+
+
+=cut
+
 sub list_bucket {
     my ( $self, $conf ) = @_;
     my $bucket = $conf->{bucket};
@@ -153,6 +422,12 @@ sub _compat_bucket {
         { account => $self, bucket => delete $conf->{bucket} } );
 }
 
+=head2 add_key 
+
+DEPRECATED. DO NOT USE
+
+=cut
+
 # compat wrapper; deprecated as of 2005-03-23
 sub add_key {
     my ( $self, $conf ) = @_;
@@ -162,6 +437,12 @@ sub add_key {
     return $bucket->add_key( $key, $value, $conf );
 }
 
+=head2 get_key 
+
+DEPRECATED. DO NOT USE
+
+=cut
+
 # compat wrapper; deprecated as of 2005-03-23
 sub get_key {
     my ( $self, $conf ) = @_;
@@ -169,12 +450,24 @@ sub get_key {
     return $bucket->get_key( $conf->{key} );
 }
 
+=head2 head_key 
+
+DEPRECATED. DO NOT USE
+
+=cut
+
 # compat wrapper; deprecated as of 2005-03-23
 sub head_key {
     my ( $self, $conf ) = @_;
     my $bucket = $self->_compat_bucket($conf);
     return $bucket->head_key( $conf->{key} );
 }
+
+=head2 delete_key 
+
+DEPRECATED. DO NOT USE
+
+=cut
 
 # compat wrapper; deprecated as of 2005-03-23
 sub delete_key {
@@ -200,9 +493,9 @@ sub _make_request {
     my $request  = HTTP::Request->new( $method, $url, $http_headers );
     $request->content($data);
 
-    my $req_as = $request->as_string;
-    $req_as =~ s/[^\n\r\x20-\x7f]/?/g;
-    $req_as = substr( $req_as, 0, 1024 ) . "\n\n";
+    # my $req_as = $request->as_string;
+    # $req_as =~ s/[^\n\r\x20-\x7f]/?/g;
+    # $req_as = substr( $req_as, 0, 1024 ) . "\n\n";
 
     return $request;
 }
@@ -391,104 +684,6 @@ sub _urlencode {
 
 __END__
 
-=head1 NAME
-
-Net::Amazon::S3 - Use the Amazon S3 - Simple Storage Service
-
-=head1 SYNOPSIS
-
-  use Net::Amazon::S3;
-  # this synopsis is presented as a test file
-  
-  my $s3 = Net::Amazon::S3->new(
-      {   aws_access_key_id     => $aws_access_key_id,
-          aws_secret_access_key => $aws_secret_access_key
-      }
-  );
-  # you can also pass a timeout in seconds
-
-  # list all buckets that i own
-  my $response = $s3->buckets;
-  is( $response->{owner_id}, '46a801915a1711f...' );
-  is( $response->{owner_displayname}, '_acme_' );
-  is_deeply($response->{buckets}, []);
-
-  # create a bucket
-  my $bucketname = $aws_access_key_id . '-net-amazon-s3-test';
-  my $bucket_obj = $s3->add_bucket( { bucket => $bucketname } )
-    or die $s3->err . ": " . $s3->errstr;
-  is(ref $bucket_obj, "Net::Amazon::S3::Bucket");
-
-  # another way to get a bucket object (does no network I/O,
-  # assumes it already exists).  Read Net::Amazon::S3::Bucket.
-  $bucket_obj = $s3->bucket("named_bucket");
-  is( ref $bucket_obj, "Net::Amazon::S3::Bucket" );
-
-  # fetch contents of the bucket
-  # note prefix, marker, max_keys options can be passed in
-  $response = $bucket->list
-      or die $s3->err . ": " . $s3->errstr;
-  is( $response->{bucket},       $bucketname );
-  is( $response->{prefix},       '' );
-  is( $response->{marker},       '' );
-  is( $response->{max_keys},     1_000 );
-  is( $response->{is_truncated}, 0 );
-  is_deeply( $response->{keys}, [] );
-
-  # store a key with a content-type and some optional metadata
-  my $keyname = 'testing.txt';
-  my $value   = 'T';
-  $bucket->add_key($key, $value, {
-    content_type        => 'text/plain',
-    'x-amz-meta-colour' => 'orange',
-  });
-
-  # list keys in the bucket
-  $response = $bucket->list
-      or die $s3->err . ": " . $s3->errstr;
-  is( $response->{bucket},       $bucketname );
-  is( $response->{prefix},       '' );
-  is( $response->{marker},       '' );
-  is( $response->{max_keys},     1_000 );
-  is( $response->{is_truncated}, 0 );
-  my @keys = @{ $response->{keys} };
-  is( @keys, 1 );
-  my $key = $keys[0];
-  is( $key->{key},  $keyname );
-  # the etag is the MD5 of the value
-  is( $key->{etag}, 'b9ece18c950afbfa6b0fdbfa4ff731d3' );
-  is( $key->{size}, 1 );
-  is( $key->{owner_id}, '46a801915a1711f...');
-  is( $key->{owner_displayname}, '_acme_' );
-
-  # see more docs in Net::Amazon::S3::Bucket
-
-=head1 DESCRIPTION
-
-This module provides a Perlish interface to Amazon S3. From the
-developer blurb: "Amazon S3 is storage for the Internet. It is
-designed to make web-scale computing easier for developers. Amazon S3
-provides a simple web services interface that can be used to store and
-retrieve any amount of data, at any time, from anywhere on the web. It
-gives any developer access to the same highly scalable, reliable,
-fast, inexpensive data storage infrastructure that Amazon uses to run
-its own global network of web sites. The service aims to maximize
-benefits of scale and to pass those benefits on to developers".
-
-To find out more about S3, please visit: http://s3.amazonaws.com/
-
-To use this module you will need to sign up to Amazon Web Services and
-provide an "Access Key ID" and " Secret Access Key". If you use this
-module, you will incurr costs as specified by Amazon. Please check the
-costs. If you use this module with your Access Key ID and Secret
-Access Key you must be responsible for these costs.
-
-I highly recommend reading all about S3, but in a nutshell data is
-stored in values. Values are referenced by keys, and keys are stored
-in buckets. Bucket names are global.
-
-Some features, such as ACLs, are not yet implemented. Patches welcome!
-
 =head1 ABOUT
 
 This module contains code modified from Amazon that contains the
@@ -502,6 +697,31 @@ following notice:
   #  Digital Services, Inc. or its affiliates with respect to your use of
   #  this software code. (c) 2006 Amazon Digital Services, Inc. or its
   #  affiliates.
+
+=head1 TESTING
+
+Testing S3 is a tricky thing. Amazon wants to charge you a bit of 
+money each time you use their service. And yes, testing counts as using.
+Because of this, the application's test suite skips anything approaching 
+a real test unless you set these three environment variables:
+
+=over 
+
+=item AMAZON_S3_EXPENSIVE_TESTS
+
+Doesn't matter what you set it to. Just has to be set
+
+
+=item AWS_ACCESS_KEY_ID 
+
+Your AWS access key
+
+=item AWS_ACCESS_KEY_SECRET
+
+Your AWS sekkr1t passkey. Be forewarned that setting this environment variable
+on a shared system might leak that information to another user. Be careful.
+
+=back
 
 =head1 AUTHOR
 

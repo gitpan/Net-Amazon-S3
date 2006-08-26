@@ -1,5 +1,10 @@
 Revision history for Perl module Net::Amazon::S3:
 
+0.33 Sat Aug 26 16:26:37 BST 2006
+     - documentation and test cleanup from Jesse Vincent
+     - use HTTP keep alive (patch by Scott Gifford)
+     - remove ununused code in _make_request (patch by Scott Gifford)
+
 0.32 Tue Apr 25 19:51:06 BST 2006
      - fix bug with listing buckets with parameters (thanks to karjala)
 

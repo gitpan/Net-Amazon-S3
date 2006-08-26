@@ -5,11 +5,27 @@ use Carp;
 use base qw(Class::Accessor::Fast);
 __PACKAGE__->mk_accessors(qw(bucket creation_date account));
 
+=head1 METHODS
+
+=head2 new
+
+Create a new bucket object. Expects a hash containing these two arguments:
+
+=over
+
+=item bucket
+
+=item account
+
+=back
+
+=cut
+
 sub new {
     my $class = shift;
     my $self  = $class->SUPER::new(@_);
-    die "no bucket"  unless $self->bucket;
-    die "no account" unless $self->account;
+    croak "no bucket"  unless $self->bucket;
+    croak "no account" unless $self->account;
     return $self;
 }
 
@@ -17,6 +33,26 @@ sub _uri {
     my ( $self, $key ) = @_;
     return $self->bucket . "/" . $self->account->_urlencode($key);
 }
+
+=head2 add_key
+
+Takes three positional parameters:
+
+=over
+
+=item key
+
+=item value
+
+=item configuration
+
+A hash of configuration data for this key. (See synopsis);
+
+=back
+
+Returns a boolean.
+
+=cut
 
 # returns bool
 sub add_key {
@@ -27,14 +63,32 @@ sub add_key {
         $self->_uri($key), $conf, $value );
 }
 
+=head2 head_key KEY
+
+Takes the name of a key in this bucket and returns its configuration hash
+
+=cut
+
 sub head_key {
     my ( $self, $key ) = @_;
     return $self->get_key( $key, "HEAD" );
 }
 
-# returns undef on missing content,
-# death on server errors,
-# and hashref of { content_type, etag, value, @meta } on success
+=head2 get_key $key_name [$method]
+
+Takes a key name and an optional HTTP method (which defaults to C<GET>.
+Fetches the key from AWS.
+
+On failure:
+
+Returns undef on missing content, throws an exception (dies) on server errors.
+
+On success:
+
+Returns a hashref of { content_type, etag, value, @meta } on success
+
+=cut
+
 sub get_key {
     my ( $self, $key, $method ) = @_;
     $method ||= "GET";
@@ -50,7 +104,7 @@ sub get_key {
     unless ( $response->code =~ /^2\d\d$/ ) {
         $acct->err("network_error");
         $acct->errstr( $response->status_line );
-        die "Net::Amazon::S3: Amazon responded with "
+        croak "Net::Amazon::S3: Amazon responded with "
             . $response->status_line . "\n";
     }
 
@@ -75,6 +129,14 @@ sub get_key {
 
 }
 
+=head2 delete_key $key_name
+
+Removes C<$key> from the bucket. Forever. It's gone after this.
+
+Returns true on success and false on failure
+
+=cut
+
 # returns bool
 sub delete_key {
     my ( $self, $key ) = @_;
@@ -83,12 +145,29 @@ sub delete_key {
         $self->_uri($key), {} );
 }
 
-# delete ourself
+=head2 delete_bucket
+
+Delete the current bucket object from the server. Takes no arguments. 
+
+Fails if the bucket has anything in it.
+
+This is an alias for C<$s3->delete_bucket($bucket)>
+
+=cut
+
 sub delete_bucket {
     my $self = shift;
     croak "Unexpected arguments" if @_;
     return $self->account->delete_bucket($self);
 }
+
+=head2 list
+
+List all keys in this bucket.
+
+see L<Net::Amazon::S3/list_bucket> for documentation of this method.
+
+=cut
 
 sub list {
     my $self = shift;
@@ -98,7 +177,21 @@ sub list {
 }
 
 # proxy up the err requests
-sub err    { $_[0]->account->err }
+
+=head2 err
+
+The S3 error code for the last error the object ran into
+
+=cut
+
+sub err { $_[0]->account->err }
+
+=head2 errstr
+
+A human readable error string for the last error the object ran into
+
+=cut
+
 sub errstr { $_[0]->account->errstr }
 
 1;

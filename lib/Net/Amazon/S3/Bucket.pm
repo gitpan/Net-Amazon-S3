@@ -176,6 +176,22 @@ sub list {
     return $self->account->list_bucket($conf);
 }
 
+=head2 list_all
+
+List all keys in this bucket without having to worry about
+'marker'. This may make multiple requests to S3 under the hood.
+
+see L<Net::Amazon::S3/list_bucket_all> for documentation of this method.
+
+=cut
+
+sub list_all {
+    my $self = shift;
+    my $conf = shift || {};
+    $conf->{bucket} = $self->bucket;
+    return $self->account->list_bucket_all($conf);
+}
+
 # proxy up the err requests
 
 =head2 err

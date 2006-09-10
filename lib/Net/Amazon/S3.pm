@@ -158,7 +158,7 @@ use base qw(Class::Accessor::Fast);
 __PACKAGE__->mk_accessors(
     qw(libxml aws_access_key_id aws_secret_access_key secure ua err errstr timeout)
 );
-our $VERSION = '0.34';
+our $VERSION = '0.35';
 
 my $AMAZON_HEADER_PREFIX = 'x-amz-';
 my $METADATA_PREFIX      = 'x-amz-meta-';
@@ -511,6 +511,41 @@ sub list_bucket {
     return $return;
 }
 
+=head2 list_bucket_all
+
+List all keys in this bucket without having to worry about
+'marker'. This is a convenience method, but may make multiple requests
+to S3 under the hood.
+
+Takes the same arguments as list_bucket.
+
+=cut
+
+sub list_bucket_all {
+    my ( $self, $conf ) = @_;
+    $conf ||= {};
+    my $bucket = $conf->{bucket};
+    croak 'must specify bucket' unless $bucket;
+
+    my $response = $self->list_bucket($conf);
+    return $response unless $response->{is_truncated};
+    my $all = $response;
+
+    while (1) {
+        my $next_marker = $response->{next_marker} || $response->{keys}->[-1]->{key};
+        warn "marker: $next_marker";
+        $conf->{marker} = $next_marker;
+        $conf->{bucket} = $bucket;
+        $response = $self->list_bucket($conf);
+        push @{$all->{keys}}, @{$response->{keys}};
+        last unless $response->{is_truncated};
+    }
+
+    delete $all->{is_truncated};
+    delete $all->{next_marker};
+    return $all;
+}
+
 sub _compat_bucket {
     my ( $self, $conf ) = @_;
     return Net::Amazon::S3::Bucket->new(
@@ -591,6 +626,7 @@ sub _make_request {
     # my $req_as = $request->as_string;
     # $req_as =~ s/[^\n\r\x20-\x7f]/?/g;
     # $req_as = substr( $req_as, 0, 1024 ) . "\n\n";
+    # warn $req_as;
 
     return $request;
 }

@@ -158,7 +158,7 @@ use base qw(Class::Accessor::Fast);
 __PACKAGE__->mk_accessors(
     qw(libxml aws_access_key_id aws_secret_access_key secure ua err errstr timeout)
 );
-our $VERSION = '0.35';
+our $VERSION = '0.36';
 
 my $AMAZON_HEADER_PREFIX = 'x-amz-';
 my $METADATA_PREFIX      = 'x-amz-meta-';
@@ -533,7 +533,6 @@ sub list_bucket_all {
 
     while (1) {
         my $next_marker = $response->{next_marker} || $response->{keys}->[-1]->{key};
-        warn "marker: $next_marker";
         $conf->{marker} = $next_marker;
         $conf->{bucket} = $bucket;
         $response = $self->list_bucket($conf);

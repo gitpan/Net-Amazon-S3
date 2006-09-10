@@ -1,5 +1,8 @@
 Revision history for Perl module Net::Amazon::S3:
 
+0.36 Sun Sep 10 16:30:39 BST 2006
+     - remove extra warning
+
 0.35 Sun Sep 10 16:25:44 BST 2006
      - added list_bucket_all to stop having to worrying about 'marker'
 

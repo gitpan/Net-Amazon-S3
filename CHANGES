@@ -1,5 +1,8 @@
 Revision history for Perl module Net::Amazon::S3:
 
+0.34 Sun Sep 10 07:27:06 BST 2006
+     - added next marker and more docs from Jesse Vincent
+
 0.33 Sat Aug 26 16:26:37 BST 2006
      - documentation and test cleanup from Jesse Vincent
      - use HTTP keep alive (patch by Scott Gifford)

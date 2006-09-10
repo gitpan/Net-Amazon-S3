@@ -158,7 +158,7 @@ use base qw(Class::Accessor::Fast);
 __PACKAGE__->mk_accessors(
     qw(libxml aws_access_key_id aws_secret_access_key secure ua err errstr timeout)
 );
-our $VERSION = '0.33';
+our $VERSION = '0.34';
 
 my $AMAZON_HEADER_PREFIX = 'x-amz-';
 my $METADATA_PREFIX      = 'x-amz-meta-';
@@ -326,7 +326,9 @@ sub delete_bucket {
 
 List all keys in this bucket.
 
-Takes a hashref containing a single key:
+Takes a hashref of arguments:
+
+MANDATORY
 
 =over
 
@@ -336,6 +338,72 @@ The name of the bucket you want to list keys on
 
 =back
 
+OPTIONAL
+
+=over
+
+=item prefix
+
+Restricts the response to only contain results that begin with the
+specified prefix. If you omit this optional argument, the value of
+prefix for your query will be the empty string. In other words, the
+results will be not be restricted by prefix.
+
+=item delimiter
+
+If this optional, Unicode string parameter is included with your
+request, then keys that contain the same string between the prefix
+and the first occurrence of the delimiter will be rolled up into a
+single result element in the CommonPrefixes collection. These
+rolled-up keys are not returned elsewhere in the response.  For
+example, with prefix="USA/" and delimiter="/", the matching keys
+"USA/Oregon/Salem" and "USA/Oregon/Portland" would be summarized
+in the response as a single "USA/Oregon" element in the CommonPrefixes
+collection. If an otherwise matching key does not contain the
+delimiter after the prefix, it appears in the Contents collection.
+
+Each element in the CommonPrefixes collection counts as one against
+the MaxKeys limit. The rolled-up keys represented by each CommonPrefixes
+element do not.  If the Delimiter parameter is not present in your
+request, keys in the result set will not be rolled-up and neither
+the CommonPrefixes collection nor the NextMarker element will be
+present in the response.
+
+NOTE (TODO): CommonPrefixes isn't currently supported by Net::Amazon::S3. 
+Patches welcome
+
+
+
+=item max-keys 
+
+This optional argument limits the number of results returned in
+response to your query. Amazon S3 will return no more than this
+number of results, but possibly less. Even if max-keys is not
+specified, Amazon S3 will limit the number of results in the response.
+Check the IsTruncated flag to see if your results are incomplete.
+If so, use the Marker parameter to request the next page of results.
+For the purpose of counting max-keys, a 'result' is either a key
+in the 'Contents' collection, or a delimited prefix in the
+'CommonPrefixes' collection. So for delimiter requests, max-keys
+limits the total number of list results, not just the number of
+keys.
+
+=item marker
+
+This optional parameter enables pagination of large result sets.
+C<marker> specifies where in the result set to resume listing. It
+restricts the response to only contain results that occur alphabetically
+after the value of marker. To retrieve the next page of results,
+use the last key from the current page of results as the marker in
+your next request.
+
+See also C<next_marker>, below. 
+
+If C<marker> is omitted,the first page of results is returned. 
+
+=back
+
+
 Returns undef on error and a hashref of data on success:
 
 The hashref looks like this:
@@ -343,31 +411,57 @@ The hashref looks like this:
   {
         bucket       => $bucket_name,
         prefix       => $bucket_prefix, 
-        marker       => $bucket_marker,
+        marker       => $bucket_marker, 
+        next_marker  => $bucket_next_available_marker,
         max_keys     => $bucket_max_keys,
         is_truncated => $bucket_is_truncated_boolean
         keys          => [$key1,$key2,...]
    }
-        
-Each key looks like this:
+
+Explanation of bits of that:
+
+=over
+
+
+=item is_truncated
+
+B flag that indicates whether or not all results of your query were
+returned in this response. If your results were truncated, you can
+make a follow-up paginated request using the Marker parameter to
+retrieve the rest of the results.
+
+
+=item next_marker 
+
+A convenience element, useful when paginating with delimiters. The
+value of C<next_marker>, if present, is the largest (alphabetically)
+of all key names and all CommonPrefixes prefixes in the response.
+If the C<is_truncated> flag is set, request the next page of results
+by setting C<marker> to the value of C<next_marker>. This element
+is only present in the response if the C<delimiter> parameter was
+sent with the request.
+
+=back
+
+
+
+Each key is a hashref that looks like this:
 
      {
         key           => $key,
         last_modified => $last_mod_date,
-        etag          => $etag,
-        size          => $size, # Bytes?
+        etag          => $etag, # An MD5 sum of the stored content.
+        size          => $size, # Bytes
         storage_class => $storage_class # Doc?
         owner_id      => $owner_id,
         owner_displayname => $owner_name
     }
 
-
 =cut
 
 sub list_bucket {
     my ( $self, $conf ) = @_;
-    my $bucket = $conf->{bucket};
-    delete $conf->{bucket};
+    my $bucket = delete $conf->{bucket};
     croak 'must specify bucket' unless $bucket;
     $conf ||= {};
 
@@ -375,7 +469,7 @@ sub list_bucket {
     if (%$conf) {
         $path .= "?"
             . join( '&',
-            map { "$_=" . $self->_urlencode( $conf->{$_} ) } keys %$conf );
+            map { $_."=" . $self->_urlencode( $conf->{$_} ) } keys %$conf );
     }
 
     my $xpc = $self->_send_request( 'GET', $path, {} );
@@ -385,6 +479,7 @@ sub list_bucket {
         bucket       => $xpc->findvalue("//s3:ListBucketResult/s3:Name"),
         prefix       => $xpc->findvalue("//s3:ListBucketResult/s3:Prefix"),
         marker       => $xpc->findvalue("//s3:ListBucketResult/s3:Marker"),
+        next_marker  => $xpc->findvalue("//s3:ListBucketResult/s3:NextMarker"),
         max_keys     => $xpc->findvalue("//s3:ListBucketResult/s3:MaxKeys"),
         is_truncated => (
             scalar $xpc->findvalue("//s3:ListBucketResult/s3:IsTruncated") eq
@@ -526,7 +621,6 @@ sub _do_http {
     # convenient time to reset any error conditions
     $self->err(undef);
     $self->errstr(undef);
-
     return $self->ua->request($request);
 }
 
@@ -548,7 +642,7 @@ sub _xpc_of_content {
     my ( $self, $content ) = @_;
     my $doc = $self->libxml->parse_string($content);
 
-    # warn $doc->toString(2);
+    #warn $doc->toString(2);
 
     my $xpc = XML::LibXML::XPathContext->new($doc);
     $xpc->registerNs( 's3', 'http://s3.amazonaws.com/doc/2006-03-01/' );
@@ -679,6 +773,7 @@ sub _urlencode {
     my ( $self, $unencoded ) = @_;
     return uri_escape( $unencoded, '^A-Za-z0-9_-' );
 }
+
 
 1;
 

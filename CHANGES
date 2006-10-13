@@ -1,5 +1,8 @@
 Revision history for Perl module Net::Amazon::S3:
 
+0.37 Fri Oct 13 19:14:57 BST 2006
+     - added support for ACLs (thanks to Gordon McCreight)
+
 0.36 Sun Sep 10 16:30:39 BST 2006
      - remove extra warning
 

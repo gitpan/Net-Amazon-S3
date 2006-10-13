@@ -31,7 +31,10 @@ sub new {
 
 sub _uri {
     my ( $self, $key ) = @_;
-    return $self->bucket . "/" . $self->account->_urlencode($key);
+    return ($key)
+        ? $self->bucket . "/" . $self->account->_urlencode($key)
+        : $self->bucket
+    ;
 }
 
 =head2 add_key
@@ -58,6 +61,12 @@ Returns a boolean.
 sub add_key {
     my ( $self, $key, $value, $conf ) = @_;
     croak 'must specify key' unless $key && length $key;
+
+    if ($conf->{acl_short}) {
+        $self->account->_validate_acl_short($conf->{acl_short});
+        $conf->{'x-amz-acl'} = $conf->{acl_short};
+        delete $conf->{acl_short};
+    }
 
     return $self->account->_send_request_expect_nothing( 'PUT',
         $self->_uri($key), $conf, $value );
@@ -101,12 +110,7 @@ sub get_key {
         return undef;
     }
 
-    unless ( $response->code =~ /^2\d\d$/ ) {
-        $acct->err("network_error");
-        $acct->errstr( $response->status_line );
-        croak "Net::Amazon::S3: Amazon responded with "
-            . $response->status_line . "\n";
-    }
+    $acct->_croak_if_response_error($response);
 
     my $etag = $response->header('ETag');
     if ($etag) {
@@ -190,6 +194,107 @@ sub list_all {
     my $conf = shift || {};
     $conf->{bucket} = $self->bucket;
     return $self->account->list_bucket_all($conf);
+}
+
+=head2 get_acl
+
+Takes one optional positional parameter
+
+=over
+
+=item key (optional)
+
+If no key is specified, it returns the acl for the bucket.
+
+=back
+
+Returns an acl in XML format.
+
+=cut
+
+sub get_acl {
+    my ( $self, $key ) = @_;
+    my $acct = $self->account;
+
+    my $request  = $acct->_make_request( 'GET', $self->_uri($key) . '?acl', {} );
+    my $response = $acct->_do_http($request);
+
+    if ( $response->code == 404 ) {
+        return undef;
+    }
+
+    $acct->_croak_if_response_error($response);
+
+    return $response->content;
+}
+
+=head2 set_acl
+
+Takes a configuration hash_ref containing:
+
+=over
+
+=item acl_xml (cannot be used in conjuction with acl_short)
+
+An XML string which contains access control information which matches
+Amazon's published schema.  There is an example of one of these XML strings
+in the tests for this module.
+
+=item acl_short (cannot be used in conjuction with acl_xml)
+
+You can use the shorthand notation instead of specifying XML for
+certain 'canned' types of acls.
+
+(from the Amazon API documentation)
+
+private: Owner gets FULL_CONTROL. No one else has any access rights.
+This is the default.
+
+public-read:Owner gets FULL_CONTROL and the anonymous principal is granted
+READ access. If this policy is used on an object, it can be read from a
+browser with no authentication.
+
+public-read-write:Owner gets FULL_CONTROL, the anonymous principal is
+granted READ and WRITE access. This is a useful policy to apply to a bucket,
+if you intend for any anonymous user to PUT objects into the bucket.
+
+authenticated-read:Owner gets FULL_CONTROL, and any principal authenticated
+as a registered Amazon S3 user is granted READ access.
+
+=item key (optional)
+
+If the key is not set, it will apply the acl to the bucket.
+
+=back
+
+Returns a boolean.
+
+=cut
+
+sub set_acl {
+    my ( $self, $conf ) = @_;
+    $conf ||= {};
+
+    unless ($conf->{acl_xml} || $conf->{acl_short}){
+        croak "need either acl_xml or acl_short";
+    }
+
+    if ($conf->{acl_xml} && $conf->{acl_short}){
+        croak "cannot provide both acl_xml and acl_short";
+    }
+
+    my $path = $self->_uri($conf->{key}) . '?acl';
+
+    my $hash_ref = ($conf->{acl_short})
+        ? { 'x-amz-acl' => $conf->{acl_short} }
+        : { }
+    ;
+
+    my $xml = $conf->{acl_xml} || '';
+
+    return $self->account->_send_request_expect_nothing( 'PUT',
+        $path, $hash_ref, $xml );
+
 }
 
 # proxy up the err requests

@@ -158,7 +158,7 @@ use base qw(Class::Accessor::Fast);
 __PACKAGE__->mk_accessors(
     qw(libxml aws_access_key_id aws_secret_access_key secure ua err errstr timeout)
 );
-our $VERSION = '0.36';
+our $VERSION = '0.37';
 
 my $AMAZON_HEADER_PREFIX = 'x-amz-';
 my $METADATA_PREFIX      = 'x-amz-meta-';
@@ -264,6 +264,10 @@ Takes a hashref:
 
 The name of the bucket you want to add
 
+=item acl_short (optional)
+
+See the set_acl subroutine for documenation on the acl_short options
+
 =back
 
 Returns 0 on failure, Net::Amazon::S3::Bucket object on success
@@ -274,7 +278,18 @@ sub add_bucket {
     my ( $self, $conf ) = @_;
     my $bucket = $conf->{bucket};
     croak 'must specify bucket' unless $bucket;
-    return 0 unless $self->_send_request_expect_nothing( 'PUT', $bucket, {} );
+
+    if ($conf->{acl_short}){
+        $self->_validate_acl_short($conf->{acl_short});
+    }
+
+    my $header_ref = ($conf->{acl_short})
+        ? {'x-amz-acl' => $conf->{acl_short}}
+        : {};
+
+    return 0 unless $self->_send_request_expect_nothing( 'PUT', $bucket,
+        $header_ref );
+
     return $self->bucket($bucket);
 }
 
@@ -605,6 +620,15 @@ sub delete_key {
     return $bucket->delete_key( $conf->{key} );
 }
 
+sub _validate_acl_short {
+    my ( $self, $policy_name ) = @_;
+
+    if ( ! grep( { $policy_name eq $_ }
+        qw(private public-read public-read-write authenticated-read) ) ){
+        croak "$policy_name is not a supported canned access policy";
+    }
+}
+
 # make the HTTP::Request object
 sub _make_request {
     my ( $self, $method, $path, $headers, $data, $metadata ) = @_;
@@ -671,6 +695,16 @@ sub _send_request_expect_nothing {
     # anything else is a failure, and we save the parsed result
     $self->_remember_errors( $response->content );
     return 0;
+}
+
+sub _croak_if_response_error {
+    my ( $self, $response ) = @_;
+    unless ( $response->code =~ /^2\d\d$/ ) {
+        $self->err("network_error");
+        $self->errstr( $response->status_line );
+        croak "Net::Amazon::S3: Amazon responded with "
+            . $response->status_line . "\n";
+    }
 }
 
 sub _xpc_of_content {

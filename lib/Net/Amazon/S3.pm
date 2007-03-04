@@ -158,7 +158,7 @@ use base qw(Class::Accessor::Fast);
 __PACKAGE__->mk_accessors(
     qw(libxml aws_access_key_id aws_secret_access_key secure ua err errstr timeout)
 );
-our $VERSION = '0.37';
+our $VERSION = '0.38';
 
 my $AMAZON_HEADER_PREFIX = 'x-amz-';
 my $METADATA_PREFIX      = 'x-amz-meta-';
@@ -215,6 +215,7 @@ sub new {
 
     my $ua = LWP::UserAgent->new( keep_alive => $KEEP_ALIVE_CACHESIZE );
     $ua->timeout( $self->timeout );
+    $ua->env_proxy;
     $self->ua($ua);
     $self->libxml( XML::LibXML->new );
     return $self;
@@ -640,7 +641,8 @@ sub _make_request {
 
     my $http_headers = $self->_merge_meta( $headers, $metadata );
 
-    $self->_add_auth_header( $http_headers, $method, $path );
+    $self->_add_auth_header( $http_headers, $method, $path )
+        unless exists $headers->{Authorization};
     my $protocol = $self->secure ? 'https' : 'http';
     my $url      = "$protocol://s3.amazonaws.com/$path";
     my $request  = HTTP::Request->new( $method, $url, $http_headers );

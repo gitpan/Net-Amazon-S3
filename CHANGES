@@ -1,5 +1,12 @@
 Revision history for Perl module Net::Amazon::S3:
 
+0.38 Sun Mar  4 16:43:28 GMT 2007
+     - use http_proxy and https_proxy environment variables for proxy
+       settings (Ask Bjoern Hansen)
+     - don't add the Authorization header if one is already specified
+       when making a request - good for allowing caching to resources
+       that are public. (Ask Bjoern Hansen)
+
 0.37 Fri Oct 13 19:14:57 BST 2006
      - added support for ACLs (thanks to Gordon McCreight)
 

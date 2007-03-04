@@ -1,6 +1,6 @@
 --- #YAML:1.0
 name: Net-Amazon-S3
-version: 0.37
+version: 0.38
 author:
   - Leon Brocard <acme@astray.com> and unknown Amazon Digital Services programmers.
   - Brad Fitzpatrick <brad@danga.com> - return values, Bucket object

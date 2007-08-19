@@ -2,18 +2,17 @@
 
 use warnings;
 use strict;
+use lib 'lib';
+use Digest::MD5::File qw(file_md5_hex);
 use Test::More;
 
-         unless( $ENV{'AMAZON_S3_EXPENSIVE_TESTS'} ){
-             plan skip_all => 'Testing this module for real costs money.';
-         }
-         else {
-             plan tests => 51;
-         }
+unless ( $ENV{'AMAZON_S3_EXPENSIVE_TESTS'} ) {
+    plan skip_all => 'Testing this module for real costs money.';
+} else {
+    plan tests => 60;
+}
 
-
-
-use_ok ('Net::Amazon::S3');
+use_ok('Net::Amazon::S3');
 
 # this synopsis is presented as a test file
 
@@ -37,9 +36,9 @@ $OWNER_DISPLAYNAME = $response->{owner_displayname};
 TODO: {
     local $TODO = "These tests only work if you're leon";
 
-    like( $response->{owner_id},          qr/^46a801915a1711f/ );
+    like( $response->{owner_id}, qr/^46a801915a1711f/ );
     is( $response->{owner_displayname}, '_acme_' );
-    is_deeply( $response->{buckets}, [] );
+    is( scalar @{ $response->{buckets} }, 2 );
 }
 
 # create a bucket
@@ -69,36 +68,34 @@ is( $response->{max_keys},     1_000 );
 is( $response->{is_truncated}, 0 );
 is_deeply( $response->{keys}, [] );
 
-is(undef, $bucket_obj->get_key("non-existing-key"));
+is( undef, $bucket_obj->get_key("non-existing-key") );
 
 my $keyname = 'testing.txt';
 
 {
+
     # Create a publicly readable key, then turn it private with a short acl.
     # This key will persist past the end of the block.
-    my $value   = 'T';
+    my $value = 'T';
     $bucket_obj->add_key(
-      $keyname, $value,
-      {   content_type        => 'text/plain',
-          'x-amz-meta-colour' => 'orange',
-          acl_short => 'public-read',
-      }
+        $keyname, $value,
+        {   content_type        => 'text/plain',
+            'x-amz-meta-colour' => 'orange',
+            acl_short           => 'public-read',
+        }
     );
 
     is_request_response_code( "http://s3.amazonaws.com/$bucketname/$keyname",
         200, "can access the publicly readable key" );
 
-    like_acl_allusers_read($bucket_obj, $keyname);
+    like_acl_allusers_read( $bucket_obj, $keyname );
 
-    ok( $bucket_obj->set_acl(
-            { key => $keyname, acl_short => 'private' }
-        )
-    );
+    ok( $bucket_obj->set_acl( { key => $keyname, acl_short => 'private' } ) );
 
     is_request_response_code( "http://s3.amazonaws.com/$bucketname/$keyname",
         403, "cannot access the private key" );
 
-    unlike_acl_allusers_read($bucket_obj, $keyname);
+    unlike_acl_allusers_read( $bucket_obj, $keyname );
 
     ok( $bucket_obj->set_acl(
             {   key     => $keyname,
@@ -110,7 +107,7 @@ my $keyname = 'testing.txt';
     is_request_response_code( "http://s3.amazonaws.com/$bucketname/$keyname",
         200, "can access the publicly readable key after acl_xml set" );
 
-    like_acl_allusers_read($bucket_obj, $keyname);
+    like_acl_allusers_read( $bucket_obj, $keyname );
 
     ok( $bucket_obj->set_acl(
             {   key     => $keyname,
@@ -122,29 +119,31 @@ my $keyname = 'testing.txt';
     is_request_response_code( "http://s3.amazonaws.com/$bucketname/$keyname",
         403, "cannot access the private key after acl_xml set" );
 
-    unlike_acl_allusers_read($bucket_obj, $keyname);
+    unlike_acl_allusers_read( $bucket_obj, $keyname );
 
 }
 
 {
+
     # Create a private key, then make it publicly readable with a short
     # acl.  Delete it at the end so we're back to having a single key in
     # the bucket.
 
     my $keyname2 = 'testing2.txt';
-    my $value   = 'T2';
+    my $value    = 'T2';
     $bucket_obj->add_key(
-      $keyname2, $value,
-      {   content_type        => 'text/plain',
-          'x-amz-meta-colour' => 'blue',
-          acl_short => 'private',
-      }
+        $keyname2,
+        $value,
+        {   content_type        => 'text/plain',
+            'x-amz-meta-colour' => 'blue',
+            acl_short           => 'private',
+        }
     );
 
     is_request_response_code( "http://s3.amazonaws.com/$bucketname/$keyname2",
         403, "cannot access the private key" );
 
-    unlike_acl_allusers_read($bucket_obj, $keyname2);
+    unlike_acl_allusers_read( $bucket_obj, $keyname2 );
 
     ok( $bucket_obj->set_acl(
             { key => $keyname2, acl_short => 'public-read' }
@@ -154,7 +153,7 @@ my $keyname = 'testing.txt';
     is_request_response_code( "http://s3.amazonaws.com/$bucketname/$keyname2",
         200, "can access the publicly readable key" );
 
-    like_acl_allusers_read($bucket_obj, $keyname2);
+    like_acl_allusers_read( $bucket_obj, $keyname2 );
 
     $bucket_obj->delete_key($keyname2);
 
@@ -185,6 +184,30 @@ ok( !$bucket_obj->delete_bucket() );
 
 $bucket_obj->delete_key($keyname);
 
+# now play with the file methods
+$keyname .= "2";
+$bucket_obj->add_key_filename(
+    $keyname, 'README',
+    {   content_type        => 'text/plain',
+        'x-amz-meta-colour' => 'orangy',
+    }
+);
+$response = $bucket_obj->get_key($keyname);
+is( $response->{content_type}, 'text/plain' );
+like( $response->{value}, qr/and unknown Amazon/ );
+is( $response->{etag}, '7ad9ac8f950a8e29d7f83c4bff903f08' );
+is( $response->{'x-amz-meta-colour'}, 'orangy' );
+
+unlink('t/README');
+$response = $bucket_obj->get_key_filename( $keyname, undef, 't/README' );
+is( $response->{content_type},        'text/plain' );
+is( $response->{value},               '' );
+is( $response->{etag},                '7ad9ac8f950a8e29d7f83c4bff903f08' );
+is( file_md5_hex('t/README'),         '7ad9ac8f950a8e29d7f83c4bff903f08' );
+is( $response->{'x-amz-meta-colour'}, 'orangy' );
+
+$bucket_obj->delete_key($keyname);
+
 # fetch contents of the bucket
 # note prefix, marker, max_keys options can be passed in
 $response = $bucket_obj->list
@@ -202,29 +225,30 @@ ok( $bucket_obj->delete_bucket() );
 
 # local test methods
 sub is_request_response_code {
-    my ($url, $code, $message) = @_;
+    my ( $url, $code, $message ) = @_;
     my $request = HTTP::Request->new( 'GET', $url );
+
     #warn $request->as_string();
     my $response = $s3->ua->request($request);
     is( $response->code, $code, $message );
 }
 
 sub like_acl_allusers_read {
-    my ($bucketobj, $keyname) = @_;
-    my $message = acl_allusers_read_message('like', @_);
-    like ($bucket_obj->get_acl($keyname) , qr(AllUsers.+READ), $message);
+    my ( $bucketobj, $keyname ) = @_;
+    my $message = acl_allusers_read_message( 'like', @_ );
+    like( $bucket_obj->get_acl($keyname), qr(AllUsers.+READ), $message );
 }
 
 sub unlike_acl_allusers_read {
-    my ($bucketobj, $keyname) = @_;
-    my $message = acl_allusers_read_message('unlike', @_);
-    unlike ($bucket_obj->get_acl($keyname) , qr(AllUsers.+READ), $message);
+    my ( $bucketobj, $keyname ) = @_;
+    my $message = acl_allusers_read_message( 'unlike', @_ );
+    unlike( $bucket_obj->get_acl($keyname), qr(AllUsers.+READ), $message );
 }
 
 sub acl_allusers_read_message {
-    my ($like_or_unlike, $bucketobj, $keyname) = @_;
-    my $message = $like_or_unlike ."_acl_allusers_read: "
-    . $bucketobj->bucket;
+    my ( $like_or_unlike, $bucketobj, $keyname ) = @_;
+    my $message
+        = $like_or_unlike . "_acl_allusers_read: " . $bucketobj->bucket;
     $message .= " - $keyname" if $keyname;
     return $message;
 }
@@ -233,7 +257,7 @@ sub acl_xml_from_acl_short {
     my $acl_short = shift || 'private';
 
     my $public_read = '';
-    if ($acl_short eq 'public-read'){
+    if ( $acl_short eq 'public-read' ) {
         $public_read = qq~
             <Grant>
                 <Grantee xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"

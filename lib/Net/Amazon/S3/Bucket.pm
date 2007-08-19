@@ -2,6 +2,7 @@ package Net::Amazon::S3::Bucket;
 use strict;
 use warnings;
 use Carp;
+use File::stat;
 use base qw(Class::Accessor::Fast);
 __PACKAGE__->mk_accessors(qw(bucket creation_date account));
 
@@ -33,8 +34,7 @@ sub _uri {
     my ( $self, $key ) = @_;
     return ($key)
         ? $self->bucket . "/" . $self->account->_urlencode($key)
-        : $self->bucket
-    ;
+        : $self->bucket;
 }
 
 =head2 add_key
@@ -62,14 +62,43 @@ sub add_key {
     my ( $self, $key, $value, $conf ) = @_;
     croak 'must specify key' unless $key && length $key;
 
-    if ($conf->{acl_short}) {
-        $self->account->_validate_acl_short($conf->{acl_short});
+    if ( $conf->{acl_short} ) {
+        $self->account->_validate_acl_short( $conf->{acl_short} );
         $conf->{'x-amz-acl'} = $conf->{acl_short};
         delete $conf->{acl_short};
     }
 
+    if ( ref($value) eq 'SCALAR' ) {
+        $conf->{'Content-Length'} ||= -s $$value;
+        $value = _content_sub($$value);
+    }
+
     return $self->account->_send_request_expect_nothing( 'PUT',
         $self->_uri($key), $conf, $value );
+}
+
+=head2 add_key_filename
+
+Use this to upload a large file to S3. Takes three positional parameters:
+
+=over
+
+=item key
+
+=item filename
+
+=item configuration
+
+A hash of configuration data for this key. (See synopsis);
+
+=back
+
+Returns a boolean.
+
+=cut
+sub add_key_filename {
+    my ( $self, $key, $value, $conf ) = @_;
+    return $self->add_key($key, \$value, $conf);
 }
 
 =head2 head_key KEY
@@ -99,12 +128,13 @@ Returns a hashref of { content_type, etag, value, @meta } on success
 =cut
 
 sub get_key {
-    my ( $self, $key, $method ) = @_;
+    my ( $self, $key, $method, $filename ) = @_;
     $method ||= "GET";
+    $filename = $$filename if ref $filename;
     my $acct = $self->account;
 
-    my $request  = $acct->_make_request( $method, $self->_uri($key), {} );
-    my $response = $acct->_do_http($request);
+    my $request = $acct->_make_request( $method, $self->_uri($key), {} );
+    my $response = $acct->_do_http( $request, $filename );
 
     if ( $response->code == 404 ) {
         return undef;
@@ -131,6 +161,27 @@ sub get_key {
 
     return $return;
 
+}
+
+=head2 get_key_filename $key_name $method $filename
+
+Use this to download large files from S3. Takes a key name and an optional 
+HTTP method (which defaults to C<GET>. Fetches the key from AWS and writes
+it to the filename. THe value returned will be empty.
+
+On failure:
+
+Returns undef on missing content, throws an exception (dies) on server errors.
+
+On success:
+
+Returns a hashref of { content_type, etag, value, @meta } on success
+
+=cut
+
+sub get_key_filename {
+    my ( $self, $key, $method, $filename ) = @_;
+    return $self->get_key($key, $method, \$filename);
 }
 
 =head2 delete_key $key_name
@@ -216,7 +267,8 @@ sub get_acl {
     my ( $self, $key ) = @_;
     my $acct = $self->account;
 
-    my $request  = $acct->_make_request( 'GET', $self->_uri($key) . '?acl', {} );
+    my $request
+        = $acct->_make_request( 'GET', $self->_uri($key) . '?acl', {} );
     my $response = $acct->_do_http($request);
 
     if ( $response->code == 404 ) {
@@ -275,25 +327,25 @@ sub set_acl {
     my ( $self, $conf ) = @_;
     $conf ||= {};
 
-    unless ($conf->{acl_xml} || $conf->{acl_short}){
+    unless ( $conf->{acl_xml} || $conf->{acl_short} ) {
         croak "need either acl_xml or acl_short";
     }
 
-    if ($conf->{acl_xml} && $conf->{acl_short}){
+    if ( $conf->{acl_xml} && $conf->{acl_short} ) {
         croak "cannot provide both acl_xml and acl_short";
     }
 
-    my $path = $self->_uri($conf->{key}) . '?acl';
+    my $path = $self->_uri( $conf->{key} ) . '?acl';
 
-    my $hash_ref = ($conf->{acl_short})
+    my $hash_ref =
+          ( $conf->{acl_short} )
         ? { 'x-amz-acl' => $conf->{acl_short} }
-        : { }
-    ;
+        : {};
 
     my $xml = $conf->{acl_xml} || '';
 
-    return $self->account->_send_request_expect_nothing( 'PUT',
-        $path, $hash_ref, $xml );
+    return $self->account->_send_request_expect_nothing( 'PUT', $path,
+        $hash_ref, $xml );
 
 }
 
@@ -314,6 +366,38 @@ A human readable error string for the last error the object ran into
 =cut
 
 sub errstr { $_[0]->account->errstr }
+
+sub _content_sub {
+    my $filename  = shift;
+    my $stat      = stat($filename);
+    my $remaining = $stat->size;
+    my $blksize   = $stat->blksize || 4096;
+
+    croak "$filename not a readable file with fixed size"
+        unless -r $filename and $remaining;
+    open DATA, "< $filename" or croak "Could not open $filename: $!";
+
+    return sub {
+        my $buffer;
+
+        # warn "read remaining $remaining";
+        unless ( my $read = read( DATA, $buffer, $blksize ) ) {
+
+#                       warn "read $read buffer $buffer remaining $remaining";
+            croak
+                "Error while reading upload content $filename ($remaining remaining) $!"
+                if $! and $remaining;
+
+            # otherwise, we found EOF
+            close DATA
+                or croak "close of upload content $filename failed: $!";
+            $buffer ||= ''
+                ;    # LWP expects an emptry string on finish, read returns 0
+        }
+        $remaining -= length($buffer);
+        return $buffer;
+    };
+}
 
 1;
 
@@ -373,3 +457,4 @@ from the Net::Amazon::S3 object.
 =head1 SEE ALSO
 
 L<Net::Amazon::S3>
+

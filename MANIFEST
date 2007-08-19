@@ -1,4 +1,3 @@
-Build.PL
 CHANGES
 lib/Net/Amazon/S3.pm
 lib/Net/Amazon/S3/Bucket.pm

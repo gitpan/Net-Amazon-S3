@@ -150,7 +150,7 @@ use HTTP::Date;
 use MIME::Base64 qw(encode_base64);
 use Net::Amazon::S3::Bucket;
 use LWP::UserAgent;
-use URI::Escape;
+use URI::Escape qw(uri_escape_utf8);
 use XML::LibXML;
 use XML::LibXML::XPathContext;
 
@@ -158,7 +158,7 @@ use base qw(Class::Accessor::Fast);
 __PACKAGE__->mk_accessors(
     qw(libxml aws_access_key_id aws_secret_access_key secure ua err errstr timeout)
 );
-our $VERSION = '0.38';
+our $VERSION = '0.39';
 
 my $AMAZON_HEADER_PREFIX = 'x-amz-';
 my $METADATA_PREFIX      = 'x-amz-meta-';
@@ -229,7 +229,7 @@ Returns undef on error, else hashref of results
 
 sub buckets {
     my $self = shift;
-    my $xpc  = $self->_send_request( 'GET', '', {} );
+    my $xpc = $self->_send_request( 'GET', '', {} );
 
     return undef unless $xpc && !$self->_remember_errors($xpc);
 
@@ -240,7 +240,7 @@ sub buckets {
     foreach my $node ( $xpc->findnodes(".//s3:Bucket") ) {
         push @buckets,
             Net::Amazon::S3::Bucket->new(
-            {   bucket        => $xpc->findvalue( ".//s3:Name", $node ),
+            {   bucket => $xpc->findvalue( ".//s3:Name", $node ),
                 creation_date =>
                     $xpc->findvalue( ".//s3:CreationDate", $node ),
                 account => $self,
@@ -280,15 +280,17 @@ sub add_bucket {
     my $bucket = $conf->{bucket};
     croak 'must specify bucket' unless $bucket;
 
-    if ($conf->{acl_short}){
-        $self->_validate_acl_short($conf->{acl_short});
+    if ( $conf->{acl_short} ) {
+        $self->_validate_acl_short( $conf->{acl_short} );
     }
 
-    my $header_ref = ($conf->{acl_short})
-        ? {'x-amz-acl' => $conf->{acl_short}}
+    my $header_ref =
+          ( $conf->{acl_short} )
+        ? { 'x-amz-acl' => $conf->{acl_short} }
         : {};
 
-    return 0 unless $self->_send_request_expect_nothing( 'PUT', $bucket,
+    return 0
+        unless $self->_send_request_expect_nothing( 'PUT', $bucket,
         $header_ref );
 
     return $self->bucket($bucket);
@@ -485,18 +487,18 @@ sub list_bucket {
     if (%$conf) {
         $path .= "?"
             . join( '&',
-            map { $_."=" . $self->_urlencode( $conf->{$_} ) } keys %$conf );
+            map { $_ . "=" . $self->_urlencode( $conf->{$_} ) } keys %$conf );
     }
 
     my $xpc = $self->_send_request( 'GET', $path, {} );
     return undef unless $xpc && !$self->_remember_errors($xpc);
 
     my $return = {
-        bucket       => $xpc->findvalue("//s3:ListBucketResult/s3:Name"),
-        prefix       => $xpc->findvalue("//s3:ListBucketResult/s3:Prefix"),
-        marker       => $xpc->findvalue("//s3:ListBucketResult/s3:Marker"),
-        next_marker  => $xpc->findvalue("//s3:ListBucketResult/s3:NextMarker"),
-        max_keys     => $xpc->findvalue("//s3:ListBucketResult/s3:MaxKeys"),
+        bucket      => $xpc->findvalue("//s3:ListBucketResult/s3:Name"),
+        prefix      => $xpc->findvalue("//s3:ListBucketResult/s3:Prefix"),
+        marker      => $xpc->findvalue("//s3:ListBucketResult/s3:Marker"),
+        next_marker => $xpc->findvalue("//s3:ListBucketResult/s3:NextMarker"),
+        max_keys    => $xpc->findvalue("//s3:ListBucketResult/s3:MaxKeys"),
         is_truncated => (
             scalar $xpc->findvalue("//s3:ListBucketResult/s3:IsTruncated") eq
                 'true'
@@ -548,11 +550,12 @@ sub list_bucket_all {
     my $all = $response;
 
     while (1) {
-        my $next_marker = $response->{next_marker} || $response->{keys}->[-1]->{key};
+        my $next_marker = $response->{next_marker}
+            || $response->{keys}->[-1]->{key};
         $conf->{marker} = $next_marker;
         $conf->{bucket} = $bucket;
-        $response = $self->list_bucket($conf);
-        push @{$all->{keys}}, @{$response->{keys}};
+        $response       = $self->list_bucket($conf);
+        push @{ $all->{keys} }, @{ $response->{keys} };
         last unless $response->{is_truncated};
     }
 
@@ -624,8 +627,9 @@ sub delete_key {
 sub _validate_acl_short {
     my ( $self, $policy_name ) = @_;
 
-    if ( ! grep( { $policy_name eq $_ }
-        qw(private public-read public-read-write authenticated-read) ) ){
+    if (!grep( { $policy_name eq $_ }
+            qw(private public-read public-read-write authenticated-read) ) )
+    {
         croak "$policy_name is not a supported canned access policy";
     }
 }
@@ -677,12 +681,12 @@ sub _send_request {
 
 # centralize all HTTP work, for debugging
 sub _do_http {
-    my ( $self, $request ) = @_;
+    my ( $self, $request, $filename ) = @_;
 
     # convenient time to reset any error conditions
     $self->err(undef);
     $self->errstr(undef);
-    return $self->ua->request($request);
+    return $self->ua->request( $request, $filename );
 }
 
 sub _send_request_expect_nothing {
@@ -842,9 +846,8 @@ sub _encode {
 
 sub _urlencode {
     my ( $self, $unencoded ) = @_;
-    return uri_escape( $unencoded, '^A-Za-z0-9_-' );
+    return uri_escape_utf8( $unencoded, '^A-Za-z0-9_-' );
 }
-
 
 1;
 
@@ -876,7 +879,6 @@ a real test unless you set these three environment variables:
 =item AMAZON_S3_EXPENSIVE_TESTS
 
 Doesn't matter what you set it to. Just has to be set
-
 
 =item AWS_ACCESS_KEY_ID 
 

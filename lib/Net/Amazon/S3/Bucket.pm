@@ -6,6 +6,57 @@ use File::stat;
 use base qw(Class::Accessor::Fast);
 __PACKAGE__->mk_accessors(qw(bucket creation_date account));
 
+=head1 NAME
+
+Net::Amazon::S3::Bucket - convenience object for working with Amazon S3 buckets
+
+=head1 SYNOPSIS
+
+  use Net::Amazon::S3;
+
+  my $bucket = $s3->bucket("foo");
+
+  ok($bucket->add_key("key", "data"));
+  ok($bucket->add_key("key", "data", {
+     content_type => "text/html",
+    'x-amz-meta-colour' => 'orange',
+  });
+
+  # the err and errstr methods just proxy up to the Net::Amazon::S3's
+  # objects err/errstr methods.
+  $bucket->add_key("bar", "baz") or
+      die $bucket->err . $bucket->errstr;
+
+  # fetch a key
+  $val = $bucket->get_key("key");
+  is( $val->{value},               'data' );
+  is( $val->{content_type},        'text/html' );
+  is( $val->{etag},                'b9ece18c950afbfa6b0fdbfa4ff731d3' );
+  is( $val->{'x-amz-meta-colour'}, 'orange' );
+
+  # returns undef on missing or on error (check $bucket->err)
+  is(undef, $bucket->get_key("non-existing-key"));
+  die $bucket->errstr if $bucket->err;
+
+  # fetch a key's metadata
+  $val = $bucket->head_key("key");
+  is( $val->{value},               '' );
+  is( $val->{content_type},        'text/html' );
+  is( $val->{etag},                'b9ece18c950afbfa6b0fdbfa4ff731d3' );
+  is( $val->{'x-amz-meta-colour'}, 'orange' );
+
+  # delete a key
+  ok($bucket->delete_key($key_name));
+  ok(! $bucket->delete_key("non-exist-key"));
+
+  # delete the entire bucket (Amazon requires it first be empty)
+  $bucket->delete_bucket;
+ 
+=head1 DESCRIPTION
+
+This module represents an S3 bucket.  You get a bucket object
+from the Net::Amazon::S3 object.
+
 =head1 METHODS
 
 =head2 new
@@ -71,6 +122,8 @@ sub add_key {
     if ( ref($value) eq 'SCALAR' ) {
         $conf->{'Content-Length'} ||= -s $$value;
         $value = _content_sub($$value);
+    } else {
+        $conf->{'Content-Length'} ||= length $value;
     }
 
     return $self->account->_send_request_expect_nothing( 'PUT',
@@ -96,9 +149,10 @@ A hash of configuration data for this key. (See synopsis);
 Returns a boolean.
 
 =cut
+
 sub add_key_filename {
     my ( $self, $key, $value, $conf ) = @_;
-    return $self->add_key($key, \$value, $conf);
+    return $self->add_key( $key, \$value, $conf );
 }
 
 =head2 head_key KEY
@@ -149,9 +203,10 @@ sub get_key {
     }
 
     my $return = {
-        content_type => $response->content_type,
-        etag         => $etag,
-        value        => $response->content,
+        content_length => $response->content_length || 0,
+        content_type   => $response->content_type,
+        etag           => $etag,
+        value          => $response->content,
     };
 
     foreach my $header ( $response->headers->header_field_names ) {
@@ -181,7 +236,7 @@ Returns a hashref of { content_type, etag, value, @meta } on success
 
 sub get_key_filename {
     my ( $self, $key, $method, $filename ) = @_;
-    return $self->get_key($key, $method, \$filename);
+    return $self->get_key( $key, $method, \$filename );
 }
 
 =head2 delete_key $key_name
@@ -402,57 +457,6 @@ sub _content_sub {
 1;
 
 __END__
-
-=head1 NAME
-
-Net::Amazon::S3::Bucket - convenience object for working with Amazon S3 buckets
-
-=head1 SYNOPSIS
-
-  use Net::Amazon::S3;
-
-  my $bucket = $s3->bucket("foo");
-
-  ok($bucket->add_key("key", "data"));
-  ok($bucket->add_key("key", "data", {
-     content_type => "text/html",
-    'x-amz-meta-colour' => 'orange',
-  });
-
-  # the err and errstr methods just proxy up to the Net::Amazon::S3's
-  # objects err/errstr methods.
-  $bucket->add_key("bar", "baz") or
-      die $bucket->err . $bucket->errstr;
-
-  # fetch a key
-  $val = $bucket->get_key("key");
-  is( $val->{value},               'data' );
-  is( $val->{content_type},        'text/html' );
-  is( $val->{etag},                'b9ece18c950afbfa6b0fdbfa4ff731d3' );
-  is( $val->{'x-amz-meta-colour'}, 'orange' );
-
-  # returns undef on missing or on error (check $bucket->err)
-  is(undef, $bucket->get_key("non-existing-key"));
-  die $bucket->errstr if $bucket->err;
-
-  # fetch a key's metadata
-  $val = $bucket->head_key("key");
-  is( $val->{value},               '' );
-  is( $val->{content_type},        'text/html' );
-  is( $val->{etag},                'b9ece18c950afbfa6b0fdbfa4ff731d3' );
-  is( $val->{'x-amz-meta-colour'}, 'orange' );
-
-  # delete a key
-  ok($bucket->delete_key($key_name));
-  ok(! $bucket->delete_key("non-exist-key"));
-
-  # delete the entire bucket (Amazon requires it first be empty)
-  $bucket->delete_bucket;
- 
-=head1 DESCRIPTION
-
-This module represents an S3 bucket.  You get a bucket object
-from the Net::Amazon::S3 object.
 
 =head1 SEE ALSO
 

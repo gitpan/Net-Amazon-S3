@@ -9,7 +9,7 @@ use Test::More;
 unless ( $ENV{'AMAZON_S3_EXPENSIVE_TESTS'} ) {
     plan skip_all => 'Testing this module for real costs money.';
 } else {
-    plan tests => 60;
+    plan tests => 66;
 }
 
 use_ok('Net::Amazon::S3');
@@ -195,8 +195,9 @@ $bucket_obj->add_key_filename(
 $response = $bucket_obj->get_key($keyname);
 is( $response->{content_type}, 'text/plain' );
 like( $response->{value}, qr/and unknown Amazon/ );
-is( $response->{etag}, '7ad9ac8f950a8e29d7f83c4bff903f08' );
+is( $response->{etag},                '7ad9ac8f950a8e29d7f83c4bff903f08' );
 is( $response->{'x-amz-meta-colour'}, 'orangy' );
+is( $response->{content_length},      13_396 );
 
 unlink('t/README');
 $response = $bucket_obj->get_key_filename( $keyname, undef, 't/README' );
@@ -205,7 +206,18 @@ is( $response->{value},               '' );
 is( $response->{etag},                '7ad9ac8f950a8e29d7f83c4bff903f08' );
 is( file_md5_hex('t/README'),         '7ad9ac8f950a8e29d7f83c4bff903f08' );
 is( $response->{'x-amz-meta-colour'}, 'orangy' );
+is( $response->{content_length},      13_396 );
 
+$bucket_obj->delete_key($keyname);
+
+# try empty files
+$keyname .= "3";
+$bucket_obj->add_key( $keyname, '' );
+$response = $bucket_obj->get_key($keyname);
+is( $response->{value},          '' );
+is( $response->{etag},           'd41d8cd98f00b204e9800998ecf8427e' );
+is( $response->{content_type},   'binary/octet-stream' );
+is( $response->{content_length}, 0 );
 $bucket_obj->delete_key($keyname);
 
 # fetch contents of the bucket
@@ -288,3 +300,4 @@ sub acl_xml_from_acl_short {
         </AccessControlList>
     </AccessControlPolicy>~;
 }
+

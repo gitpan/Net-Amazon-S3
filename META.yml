@@ -1,6 +1,6 @@
 --- #YAML:1.0
 name:                Net-Amazon-S3
-version:             0.39
+version:             0.40
 abstract:            ~
 license:             perl
 generated_by:        ExtUtils::MakeMaker version 6.32

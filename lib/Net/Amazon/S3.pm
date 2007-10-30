@@ -8,114 +8,69 @@ Net::Amazon::S3 - Use the Amazon S3 - Simple Storage Service
 
 =head1 SYNOPSIS
 
-  #!/usr/bin/perl
-  use warnings;
-  use strict;
-  use Test::More qw/no_plan/;
-  
-  # this synopsis is presented as a test file
-
   use Net::Amazon::S3;
-  
-  
-  use vars qw/$OWNER_ID $OWNER_DISPLAYNAME/;
-  
-  my $aws_access_key_id     = "Fill me in!";
-  my $aws_secret_access_key = "Fill me in too!";
-  
+  my $aws_access_key_id     = 'fill me in';
+  my $aws_secret_access_key = 'fill me in too';
+
   my $s3 = Net::Amazon::S3->new(
       {   aws_access_key_id     => $aws_access_key_id,
-          aws_secret_access_key => $aws_secret_access_key
+          aws_secret_access_key => $aws_secret_access_key,
       }
   );
-  
-  # you can also pass a timeout in seconds
-  
+
+  # a bucket is a globally-unique directory
   # list all buckets that i own
   my $response = $s3->buckets;
-  
-  TODO: {
-      local $TODO = "These tests only work if you're leon";
-      $OWNER_ID          = $response->{owner_id};
-      $OWNER_DISPLAYNAME = $response->{owner_displayname};
-  
-      is( $response->{owner_id},          '46a801915a1711f...' );
-      is( $response->{owner_displayname}, '_acme_' );
-      is_deeply( $response->{buckets}, [] );
+  foreach my $bucket ( @{ $response->{buckets} } ) {
+      print "You have a bucket: " . $bucket->bucket . "\n";
   }
-  
-  # create a bucket
-  my $bucketname = $aws_access_key_id . '-net-amazon-s3-test';
-  my $bucket_obj = $s3->add_bucket( { bucket => $bucketname } )
+
+  # create a new bucket
+  my $bucketname = 'acmes_photo_backups';
+  my $bucket = $s3->add_bucket( { bucket => $bucketname } )
       or die $s3->err . ": " . $s3->errstr;
-  is( ref $bucket_obj, "Net::Amazon::S3::Bucket" );
-  
-  # another way to get a bucket object (does no network I/O,
-  # assumes it already exists).  Read Net::Amazon::S3::Bucket.
-  $bucket_obj = $s3->bucket($bucketname);
-  is( ref $bucket_obj, "Net::Amazon::S3::Bucket" );
-  
-  # fetch contents of the bucket
-  # note prefix, marker, max_keys options can be passed in
-  $response = $bucket_obj->list
+
+  # or use an existing bucket
+  $bucket = $s3->bucket($bucketname);
+
+  # store a file in the bucket
+  $bucket->add_key_filename( '1.JPG', 'DSC06256.JPG',
+      { content_type => 'image/jpeg', },
+  ) or die $s3->err . ": " . $s3->errstr;
+
+  # store a value in the bucket
+  $bucket->add_key( 'reminder.txt', 'this is where my photos are backed up' )
       or die $s3->err . ": " . $s3->errstr;
-  is( $response->{bucket},       $bucketname );
-  is( $response->{prefix},       '' );
-  is( $response->{marker},       '' );
-  is( $response->{max_keys},     1_000 );
-  is( $response->{is_truncated}, 0 );
-  is_deeply( $response->{keys}, [] );
-  
-  # store a key with a content-type and some optional metadata
-  my $keyname = 'testing.txt';
-  my $value   = 'T';
-  $bucket_obj->add_key(
-      $keyname, $value,
-      {   content_type        => 'text/plain',
-          'x-amz-meta-colour' => 'orange',
-      }
-  );
-  
-  # list keys in the bucket
-  $response = $bucket_obj->list
+
+  # list files in the bucket
+  $response = $bucket->list_all
       or die $s3->err . ": " . $s3->errstr;
-  is( $response->{bucket},       $bucketname );
-  is( $response->{prefix},       '' );
-  is( $response->{marker},       '' );
-  is( $response->{max_keys},     1_000 );
-  is( $response->{is_truncated}, 0 );
-  my @keys = @{ $response->{keys} };
-  is( @keys, 1 );
-  my $key = $keys[0];
-  is( $key->{key}, $keyname );
-  
-  # the etag is the MD5 of the value
-  is( $key->{etag}, 'b9ece18c950afbfa6b0fdbfa4ff731d3' );
-  is( $key->{size}, 1 );
-  
-  is( $key->{owner_id},          $OWNER_ID );
-  is( $key->{owner_displayname}, $OWNER_DISPLAYNAME );
-  
-  # You can't delete a bucket with things in it
-  ok( !$bucket_obj->delete_bucket() );
-  
-  $bucket_obj->delete_key($keyname);
-  
-  # fetch contents of the bucket
-  # note prefix, marker, max_keys options can be passed in
-  $response = $bucket_obj->list
+  foreach my $key ( @{ $response->{keys} } ) {
+      my $key_name = $key->{key};
+      my $key_size = $key->{size};
+      print "Bucket contains key '$key_name' of size $key_size\n";
+  }
+
+  # fetch file from the bucket
+  $response = $bucket->get_key_filename( '1.JPG', 'GET', 'backup.jpg' )
       or die $s3->err . ": " . $s3->errstr;
-  is( $response->{bucket},       $bucketname );
-  is( $response->{prefix},       '' );
-  is( $response->{marker},       '' );
-  is( $response->{max_keys},     1_000 );
-  is( $response->{is_truncated}, 0 );
-  is_deeply( $response->{keys}, [] );
-  
-  ok( $bucket_obj->delete_bucket() );
-  
-  # see more docs in Net::Amazon::S3::Bucket
-  
+
+  # fetch value from the bucket
+  $response = $bucket->get_key('reminder.txt')
+      or die $s3->err . ": " . $s3->errstr;
+  print "reminder.txt:\n";
+  print "  content length: " . $response->{content_length} . "\n";
+  print "    content type: " . $response->{content_type} . "\n";
+  print "            etag: " . $response->{content_type} . "\n";
+  print "         content: " . $response->{value} . "\n";
+
+  # delete keys
+  $bucket->delete_key('reminder.txt') or die $s3->err . ": " . $s3->errstr;
+  $bucket->delete_key('1.JPG')        or die $s3->err . ": " . $s3->errstr;
+
+  # and finally delete the bucket
+  $bucket->delete_bucket or die $s3->err . ": " . $s3->errstr;
+
 =head1 DESCRIPTION
 
 This module provides a Perlish interface to Amazon S3. From the
@@ -140,8 +95,6 @@ I highly recommend reading all about S3, but in a nutshell data is
 stored in values. Values are referenced by keys, and keys are stored
 in buckets. Bucket names are global.
 
-Some features, such as ACLs, are not yet implemented. Patches welcome!
-
 =cut
 
 use Carp;
@@ -158,7 +111,7 @@ use base qw(Class::Accessor::Fast);
 __PACKAGE__->mk_accessors(
     qw(libxml aws_access_key_id aws_secret_access_key secure ua err errstr timeout)
 );
-our $VERSION = '0.39';
+our $VERSION = '0.40';
 
 my $AMAZON_HEADER_PREFIX = 'x-amz-';
 my $METADATA_PREFIX      = 'x-amz-meta-';
@@ -387,11 +340,6 @@ request, keys in the result set will not be rolled-up and neither
 the CommonPrefixes collection nor the NextMarker element will be
 present in the response.
 
-NOTE (TODO): CommonPrefixes isn't currently supported by Net::Amazon::S3. 
-Patches welcome
-
-
-
 =item max-keys 
 
 This optional argument limits the number of results returned in
@@ -427,19 +375,25 @@ Returns undef on error and a hashref of data on success:
 The hashref looks like this:
 
   {
-        bucket       => $bucket_name,
-        prefix       => $bucket_prefix, 
-        marker       => $bucket_marker, 
-        next_marker  => $bucket_next_available_marker,
-        max_keys     => $bucket_max_keys,
-        is_truncated => $bucket_is_truncated_boolean
-        keys          => [$key1,$key2,...]
+        bucket          => $bucket_name,
+        prefix          => $bucket_prefix, 
+        common_prefixes => [$prefix1,$prefix2,...]
+        marker          => $bucket_marker, 
+        next_marker     => $bucket_next_available_marker,
+        max_keys        => $bucket_max_keys,
+        is_truncated    => $bucket_is_truncated_boolean
+        keys            => [$key1,$key2,...]
    }
 
 Explanation of bits of that:
 
 =over
 
+=item common_prefixes
+
+If list_bucket was requested with a delimiter, common_prefixes will
+contain a list of prefixes matching that delimiter.  Drill down into
+these prefixes by making another request with the prefix parameter.
 
 =item is_truncated
 
@@ -460,8 +414,6 @@ is only present in the response if the C<delimiter> parameter was
 sent with the request.
 
 =back
-
-
 
 Each key is a hashref that looks like this:
 
@@ -526,6 +478,22 @@ sub list_bucket {
             };
     }
     $return->{keys} = \@keys;
+
+    if ( $conf->{delimiter} ) {
+        my @common_prefixes;
+        my $strip_delim = qr/$conf->{delimiter}$/;
+
+        foreach my $node ( $xpc->findnodes(".//s3:CommonPrefixes") ) {
+            my $prefix = $xpc->findvalue( ".//s3:Prefix", $node );
+
+            # strip delimiter from end of prefix
+            $prefix =~ s/$strip_delim//;
+
+            push @common_prefixes, $prefix;
+        }
+        $return->{common_prefixes} = \@common_prefixes;
+    }
+
     return $return;
 }
 

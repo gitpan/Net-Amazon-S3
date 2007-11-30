@@ -9,7 +9,7 @@ use Test::More;
 unless ( $ENV{'AMAZON_S3_EXPENSIVE_TESTS'} ) {
     plan skip_all => 'Testing this module for real costs money.';
 } else {
-    plan tests => 66;
+    plan tests => 63 * 2 + 4;
 }
 
 use_ok('Net::Amazon::S3');
@@ -41,197 +41,218 @@ TODO: {
     is( scalar @{ $response->{buckets} }, 2 );
 }
 
-# create a bucket
-my $bucketname = $aws_access_key_id . '-net-amazon-s3-test';
-my $bucket_obj
-    = $s3->add_bucket( { bucket => $bucketname, acl_short => 'public-read' } )
-    or die $s3->err . ": " . $s3->errstr;
-is( ref $bucket_obj, "Net::Amazon::S3::Bucket" );
+for my $location ( undef, 'EU' ) {
 
-like_acl_allusers_read($bucket_obj);
-ok( $bucket_obj->set_acl( { acl_short => 'private' } ) );
-unlike_acl_allusers_read($bucket_obj);
-
-# another way to get a bucket object (does no network I/O,
-# assumes it already exists).  Read Net::Amazon::S3::Bucket.
-$bucket_obj = $s3->bucket($bucketname);
-is( ref $bucket_obj, "Net::Amazon::S3::Bucket" );
-
-# fetch contents of the bucket
-# note prefix, marker, max_keys options can be passed in
-$response = $bucket_obj->list
-    or die $s3->err . ": " . $s3->errstr;
-is( $response->{bucket},       $bucketname );
-is( $response->{prefix},       '' );
-is( $response->{marker},       '' );
-is( $response->{max_keys},     1_000 );
-is( $response->{is_truncated}, 0 );
-is_deeply( $response->{keys}, [] );
-
-is( undef, $bucket_obj->get_key("non-existing-key") );
-
-my $keyname = 'testing.txt';
-
-{
-
-    # Create a publicly readable key, then turn it private with a short acl.
-    # This key will persist past the end of the block.
-    my $value = 'T';
-    $bucket_obj->add_key(
-        $keyname, $value,
-        {   content_type        => 'text/plain',
-            'x-amz-meta-colour' => 'orange',
+  # create a bucket
+  # make sure it's a valid hostname for EU testing
+  # we use the same bucket name for both in order to force one or the other to
+  # have stale DNS
+    my $bucketname = 'net-amazon-s3-test-' . lc $aws_access_key_id;
+    my $bucket_obj = $s3->add_bucket(
+        {   bucket              => $bucketname,
             acl_short           => 'public-read',
+            location_constraint => $location
         }
-    );
+    ) or die $s3->err . ": " . $s3->errstr;
+    is( ref $bucket_obj, "Net::Amazon::S3::Bucket" );
+    is( $bucket_obj->get_location_constraint, $location );
 
-    is_request_response_code( "http://s3.amazonaws.com/$bucketname/$keyname",
-        200, "can access the publicly readable key" );
+    like_acl_allusers_read($bucket_obj);
+    ok( $bucket_obj->set_acl( { acl_short => 'private' } ) );
+    unlike_acl_allusers_read($bucket_obj);
 
-    like_acl_allusers_read( $bucket_obj, $keyname );
+    # another way to get a bucket object (does no network I/O,
+    # assumes it already exists).  Read Net::Amazon::S3::Bucket.
+    $bucket_obj = $s3->bucket($bucketname);
+    is( ref $bucket_obj, "Net::Amazon::S3::Bucket" );
 
-    ok( $bucket_obj->set_acl( { key => $keyname, acl_short => 'private' } ) );
+    # fetch contents of the bucket
+    # note prefix, marker, max_keys options can be passed in
+    $response = $bucket_obj->list
+        or die $s3->err . ": " . $s3->errstr;
+    is( $response->{bucket},       $bucketname );
+    is( $response->{prefix},       '' );
+    is( $response->{marker},       '' );
+    is( $response->{max_keys},     1_000 );
+    is( $response->{is_truncated}, 0 );
+    is_deeply( $response->{keys}, [] );
 
-    is_request_response_code( "http://s3.amazonaws.com/$bucketname/$keyname",
-        403, "cannot access the private key" );
+    is( undef, $bucket_obj->get_key("non-existing-key") );
 
-    unlike_acl_allusers_read( $bucket_obj, $keyname );
+    my $keyname = 'testing.txt';
 
-    ok( $bucket_obj->set_acl(
-            {   key     => $keyname,
-                acl_xml => acl_xml_from_acl_short('public-read')
+    {
+
+      # Create a publicly readable key, then turn it private with a short acl.
+      # This key will persist past the end of the block.
+        my $value = 'T';
+        $bucket_obj->add_key(
+            $keyname, $value,
+            {   content_type        => 'text/plain',
+                'x-amz-meta-colour' => 'orange',
+                acl_short           => 'public-read',
             }
-        )
-    );
+        );
 
-    is_request_response_code( "http://s3.amazonaws.com/$bucketname/$keyname",
-        200, "can access the publicly readable key after acl_xml set" );
+        is_request_response_code(
+            "http://$bucketname.s3.amazonaws.com/$keyname",
+            200, "can access the publicly readable key" );
 
-    like_acl_allusers_read( $bucket_obj, $keyname );
+        like_acl_allusers_read( $bucket_obj, $keyname );
 
-    ok( $bucket_obj->set_acl(
-            {   key     => $keyname,
-                acl_xml => acl_xml_from_acl_short('private')
-            }
-        )
-    );
+        ok( $bucket_obj->set_acl(
+                { key => $keyname, acl_short => 'private' }
+            )
+        );
 
-    is_request_response_code( "http://s3.amazonaws.com/$bucketname/$keyname",
-        403, "cannot access the private key after acl_xml set" );
+        is_request_response_code(
+            "http://$bucketname.s3.amazonaws.com/$keyname",
+            403, "cannot access the private key" );
 
-    unlike_acl_allusers_read( $bucket_obj, $keyname );
+        unlike_acl_allusers_read( $bucket_obj, $keyname );
 
-}
+        ok( $bucket_obj->set_acl(
+                {   key     => $keyname,
+                    acl_xml => acl_xml_from_acl_short('public-read')
+                }
+            )
+        );
 
-{
+        is_request_response_code(
+            "http://$bucketname.s3.amazonaws.com/$keyname",
+            200, "can access the publicly readable key after acl_xml set" );
 
-    # Create a private key, then make it publicly readable with a short
-    # acl.  Delete it at the end so we're back to having a single key in
-    # the bucket.
+        like_acl_allusers_read( $bucket_obj, $keyname );
 
-    my $keyname2 = 'testing2.txt';
-    my $value    = 'T2';
-    $bucket_obj->add_key(
-        $keyname2,
-        $value,
-        {   content_type        => 'text/plain',
-            'x-amz-meta-colour' => 'blue',
-            acl_short           => 'private',
-        }
-    );
+        ok( $bucket_obj->set_acl(
+                {   key     => $keyname,
+                    acl_xml => acl_xml_from_acl_short('private')
+                }
+            )
+        );
 
-    is_request_response_code( "http://s3.amazonaws.com/$bucketname/$keyname2",
-        403, "cannot access the private key" );
+        is_request_response_code(
+            "http://$bucketname.s3.amazonaws.com/$keyname",
+            403, "cannot access the private key after acl_xml set" );
 
-    unlike_acl_allusers_read( $bucket_obj, $keyname2 );
+        unlike_acl_allusers_read( $bucket_obj, $keyname );
 
-    ok( $bucket_obj->set_acl(
-            { key => $keyname2, acl_short => 'public-read' }
-        )
-    );
-
-    is_request_response_code( "http://s3.amazonaws.com/$bucketname/$keyname2",
-        200, "can access the publicly readable key" );
-
-    like_acl_allusers_read( $bucket_obj, $keyname2 );
-
-    $bucket_obj->delete_key($keyname2);
-
-}
-
-# list keys in the bucket
-$response = $bucket_obj->list
-    or die $s3->err . ": " . $s3->errstr;
-is( $response->{bucket},       $bucketname );
-is( $response->{prefix},       '' );
-is( $response->{marker},       '' );
-is( $response->{max_keys},     1_000 );
-is( $response->{is_truncated}, 0 );
-my @keys = @{ $response->{keys} };
-is( @keys, 1 );
-my $key = $keys[0];
-is( $key->{key}, $keyname );
-
-# the etag is the MD5 of the value
-is( $key->{etag}, 'b9ece18c950afbfa6b0fdbfa4ff731d3' );
-is( $key->{size}, 1 );
-
-is( $key->{owner_id},          $OWNER_ID );
-is( $key->{owner_displayname}, $OWNER_DISPLAYNAME );
-
-# You can't delete a bucket with things in it
-ok( !$bucket_obj->delete_bucket() );
-
-$bucket_obj->delete_key($keyname);
-
-# now play with the file methods
-$keyname .= "2";
-$bucket_obj->add_key_filename(
-    $keyname, 'README',
-    {   content_type        => 'text/plain',
-        'x-amz-meta-colour' => 'orangy',
     }
-);
-$response = $bucket_obj->get_key($keyname);
-is( $response->{content_type}, 'text/plain' );
-like( $response->{value}, qr/and unknown Amazon/ );
-is( $response->{etag},                '7ad9ac8f950a8e29d7f83c4bff903f08' );
-is( $response->{'x-amz-meta-colour'}, 'orangy' );
-is( $response->{content_length},      13_396 );
 
-unlink('t/README');
-$response = $bucket_obj->get_key_filename( $keyname, undef, 't/README' );
-is( $response->{content_type},        'text/plain' );
-is( $response->{value},               '' );
-is( $response->{etag},                '7ad9ac8f950a8e29d7f83c4bff903f08' );
-is( file_md5_hex('t/README'),         '7ad9ac8f950a8e29d7f83c4bff903f08' );
-is( $response->{'x-amz-meta-colour'}, 'orangy' );
-is( $response->{content_length},      13_396 );
+    {
 
-$bucket_obj->delete_key($keyname);
+        # Create a private key, then make it publicly readable with a short
+        # acl.  Delete it at the end so we're back to having a single key in
+        # the bucket.
 
-# try empty files
-$keyname .= "3";
-$bucket_obj->add_key( $keyname, '' );
-$response = $bucket_obj->get_key($keyname);
-is( $response->{value},          '' );
-is( $response->{etag},           'd41d8cd98f00b204e9800998ecf8427e' );
-is( $response->{content_type},   'binary/octet-stream' );
-is( $response->{content_length}, 0 );
-$bucket_obj->delete_key($keyname);
+        my $keyname2 = 'testing2.txt';
+        my $value    = 'T2';
+        $bucket_obj->add_key(
+            $keyname2,
+            $value,
+            {   content_type        => 'text/plain',
+                'x-amz-meta-colour' => 'blue',
+                acl_short           => 'private',
+            }
+        );
 
-# fetch contents of the bucket
-# note prefix, marker, max_keys options can be passed in
-$response = $bucket_obj->list
-    or die $s3->err . ": " . $s3->errstr;
-is( $response->{bucket},       $bucketname );
-is( $response->{prefix},       '' );
-is( $response->{marker},       '' );
-is( $response->{max_keys},     1_000 );
-is( $response->{is_truncated}, 0 );
-is_deeply( $response->{keys}, [] );
+        is_request_response_code(
+            "http://$bucketname.s3.amazonaws.com/$keyname2",
+            403, "cannot access the private key" );
 
-ok( $bucket_obj->delete_bucket() );
+        unlike_acl_allusers_read( $bucket_obj, $keyname2 );
+
+        ok( $bucket_obj->set_acl(
+                { key => $keyname2, acl_short => 'public-read' }
+            )
+        );
+
+        is_request_response_code(
+            "http://$bucketname.s3.amazonaws.com/$keyname2",
+            200, "can access the publicly readable key" );
+
+        like_acl_allusers_read( $bucket_obj, $keyname2 );
+
+        $bucket_obj->delete_key($keyname2);
+
+    }
+
+    # list keys in the bucket
+    $response = $bucket_obj->list
+        or die $s3->err . ": " . $s3->errstr;
+    is( $response->{bucket},       $bucketname );
+    is( $response->{prefix},       '' );
+    is( $response->{marker},       '' );
+    is( $response->{max_keys},     1_000 );
+    is( $response->{is_truncated}, 0 );
+    my @keys = @{ $response->{keys} };
+    is( @keys, 1 );
+    my $key = $keys[0];
+    is( $key->{key}, $keyname );
+
+    # the etag is the MD5 of the value
+    is( $key->{etag}, 'b9ece18c950afbfa6b0fdbfa4ff731d3' );
+    is( $key->{size}, 1 );
+
+    is( $key->{owner_id},          $OWNER_ID );
+    is( $key->{owner_displayname}, $OWNER_DISPLAYNAME );
+
+    # You can't delete a bucket with things in it
+    ok( !$bucket_obj->delete_bucket() );
+
+    $bucket_obj->delete_key($keyname);
+
+    # now play with the file methods
+    my $readme_md5  = file_md5_hex('README');
+    my $readme_size = -s 'README';
+    $keyname .= "2";
+    $bucket_obj->add_key_filename(
+        $keyname, 'README',
+        {   content_type        => 'text/plain',
+            'x-amz-meta-colour' => 'orangy',
+        }
+    );
+    $response = $bucket_obj->get_key($keyname);
+    is( $response->{content_type}, 'text/plain' );
+    like( $response->{value}, qr/and unknown Amazon/ );
+    is( $response->{etag},                $readme_md5 );
+    is( $response->{'x-amz-meta-colour'}, 'orangy' );
+    is( $response->{content_length},      $readme_size );
+
+    unlink('t/README');
+    $response = $bucket_obj->get_key_filename( $keyname, undef, 't/README' );
+    is( $response->{content_type},        'text/plain' );
+    is( $response->{value},               '' );
+    is( $response->{etag},                $readme_md5 );
+    is( file_md5_hex('t/README'),         $readme_md5 );
+    is( $response->{'x-amz-meta-colour'}, 'orangy' );
+    is( $response->{content_length},      $readme_size );
+
+    $bucket_obj->delete_key($keyname);
+
+    # try empty files
+    $keyname .= "3";
+    $bucket_obj->add_key( $keyname, '' );
+    $response = $bucket_obj->get_key($keyname);
+    is( $response->{value},          '' );
+    is( $response->{etag},           'd41d8cd98f00b204e9800998ecf8427e' );
+    is( $response->{content_type},   'binary/octet-stream' );
+    is( $response->{content_length}, 0 );
+    $bucket_obj->delete_key($keyname);
+
+    # fetch contents of the bucket
+    # note prefix, marker, max_keys options can be passed in
+    $response = $bucket_obj->list
+        or die $s3->err . ": " . $s3->errstr;
+    is( $response->{bucket},       $bucketname );
+    is( $response->{prefix},       '' );
+    is( $response->{marker},       '' );
+    is( $response->{max_keys},     1_000 );
+    is( $response->{is_truncated}, 0 );
+    is_deeply( $response->{keys}, [] );
+
+    ok( $bucket_obj->delete_bucket() );
+}
 
 # see more docs in Net::Amazon::S3::Bucket
 
@@ -248,13 +269,13 @@ sub is_request_response_code {
 sub like_acl_allusers_read {
     my ( $bucketobj, $keyname ) = @_;
     my $message = acl_allusers_read_message( 'like', @_ );
-    like( $bucket_obj->get_acl($keyname), qr(AllUsers.+READ), $message );
+    like( $bucketobj->get_acl($keyname), qr(AllUsers.+READ), $message );
 }
 
 sub unlike_acl_allusers_read {
     my ( $bucketobj, $keyname ) = @_;
     my $message = acl_allusers_read_message( 'unlike', @_ );
-    unlike( $bucket_obj->get_acl($keyname), qr(AllUsers.+READ), $message );
+    unlike( $bucketobj->get_acl($keyname), qr(AllUsers.+READ), $message );
 }
 
 sub acl_allusers_read_message {

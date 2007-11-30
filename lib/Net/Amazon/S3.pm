@@ -111,7 +111,7 @@ use base qw(Class::Accessor::Fast);
 __PACKAGE__->mk_accessors(
     qw(libxml aws_access_key_id aws_secret_access_key secure ua err errstr timeout)
 );
-our $VERSION = '0.40';
+our $VERSION = '0.41';
 
 my $AMAZON_HEADER_PREFIX = 'x-amz-';
 my $METADATA_PREFIX      = 'x-amz-meta-';
@@ -166,7 +166,10 @@ sub new {
     $self->secure(0)   if not defined $self->secure;
     $self->timeout(30) if not defined $self->timeout;
 
-    my $ua = LWP::UserAgent->new( keep_alive => $KEEP_ALIVE_CACHESIZE );
+    my $ua = LWP::UserAgent->new(
+        keep_alive            => $KEEP_ALIVE_CACHESIZE,
+        requests_redirectable => [qw(GET HEAD DELETE PUT)],
+    );
     $ua->timeout( $self->timeout );
     $ua->env_proxy;
     $self->ua($ua);
@@ -222,6 +225,12 @@ The name of the bucket you want to add
 
 See the set_acl subroutine for documenation on the acl_short options
 
+=item location_constraint (option)
+
+Sets the location constraint of the new bucket. If left unspecified, the
+default S3 datacenter location will be used. Otherwise, you can set it
+to 'EU' for a European data center - note that costs are different.
+
 =back
 
 Returns 0 on failure, Net::Amazon::S3::Bucket object on success
@@ -237,14 +246,22 @@ sub add_bucket {
         $self->_validate_acl_short( $conf->{acl_short} );
     }
 
-    my $header_ref =
-          ( $conf->{acl_short} )
+    my $header_ref
+        = ( $conf->{acl_short} )
         ? { 'x-amz-acl' => $conf->{acl_short} }
         : {};
 
+    my $data = '';
+    if ( defined $conf->{location_constraint} ) {
+        $data
+            = "<CreateBucketConfiguration><LocationConstraint>"
+            . $conf->{location_constraint}
+            . "</LocationConstraint></CreateBucketConfiguration>";
+    }
+
     return 0
-        unless $self->_send_request_expect_nothing( 'PUT', $bucket,
-        $header_ref );
+        unless $self->_send_request_expect_nothing( 'PUT', "$bucket/",
+        $header_ref, $data );
 
     return $self->bucket($bucket);
 }
@@ -290,7 +307,7 @@ sub delete_bucket {
         $bucket = $conf->{bucket};
     }
     croak 'must specify bucket' unless $bucket;
-    return $self->_send_request_expect_nothing( 'DELETE', $bucket, {} );
+    return $self->_send_request_expect_nothing( 'DELETE', $bucket . "/", {} );
 }
 
 =head2 list_bucket
@@ -435,7 +452,7 @@ sub list_bucket {
     croak 'must specify bucket' unless $bucket;
     $conf ||= {};
 
-    my $path = $bucket;
+    my $path = $bucket . "/";
     if (%$conf) {
         $path .= "?"
             . join( '&',
@@ -602,6 +619,27 @@ sub _validate_acl_short {
     }
 }
 
+# EU buckets must be accessed via their DNS name. This routine figures out if
+# a given bucket name can be safely used as a DNS name.
+sub _is_dns_bucket {
+    my $bucketname = $_[0];
+
+    if ( length $bucketname > 63 ) {
+        return 0;
+    }
+    if ( length $bucketname < 3 ) {
+        return;
+    }
+    return 0 unless $bucketname =~ m{^[a-z0-9][a-z0-9.-]+$};
+    my @components = split /\./, $bucketname;
+    for my $c (@components) {
+        return 0 if $c =~ m{^-};
+        return 0 if $c =~ m{-$};
+        return 0 if $c eq '';
+    }
+    return 1;
+}
+
 # make the HTTP::Request object
 sub _make_request {
     my ( $self, $method, $path, $headers, $data, $metadata ) = @_;
@@ -616,8 +654,12 @@ sub _make_request {
     $self->_add_auth_header( $http_headers, $method, $path )
         unless exists $headers->{Authorization};
     my $protocol = $self->secure ? 'https' : 'http';
-    my $url      = "$protocol://s3.amazonaws.com/$path";
-    my $request  = HTTP::Request->new( $method, $url, $http_headers );
+    my $url = "$protocol://s3.amazonaws.com/$path";
+    if ( $path =~ m{^([^/?]+)(.*)} && _is_dns_bucket($1) ) {
+        $url = "$protocol://$1.s3.amazonaws.com$2";
+    }
+
+    my $request = HTTP::Request->new( $method, $url, $http_headers );
     $request->content($data);
 
     # my $req_as = $request->as_string;
@@ -663,6 +705,42 @@ sub _send_request_expect_nothing {
 
     my $response = $self->_do_http($request);
     my $content  = $response->content;
+
+    return 1 if $response->code =~ /^2\d\d$/;
+
+    # anything else is a failure, and we save the parsed result
+    $self->_remember_errors( $response->content );
+    return 0;
+}
+
+# Send a HEAD request first, to find out if we'll be hit with a 307 redirect.
+# Since currently LWP does not have true support for 100 Continue, it simply
+# slams the PUT body into the socket without waiting for any possible redirect.
+# Thus when we're reading from a filehandle, when LWP goes to reissue the request
+# having followed the redirect, the filehandle's already been closed from the
+# first time we used it. Thus, we need to probe first to find out what's going on,
+# before we start sending any actual data.
+sub _send_request_expect_nothing_probed {
+    my $self = shift;
+    my ( $method, $path, $conf, $value ) = @_;
+    my $request = $self->_make_request( 'HEAD', $path );
+    my $override_uri = undef;
+
+    my $old_redirectable = $self->ua->requests_redirectable;
+    $self->ua->requests_redirectable( [] );
+
+    my $response = $self->_do_http($request);
+
+    if ( $response->code =~ /^3/ && defined $response->header('Location') ) {
+        $override_uri = $response->header('Location');
+    }
+    $request = $self->_make_request(@_);
+    $request->uri($override_uri) if defined $override_uri;
+
+    $response = $self->_do_http($request);
+    $self->ua->requests_redirectable($old_redirectable);
+
+    my $content = $response->content;
 
     return 1 if $response->code =~ /^2\d\d$/;
 
@@ -786,6 +864,8 @@ sub _canonical_string {
         $buf .= '?acl';
     } elsif ( $path =~ /[&?]torrent($|=|&)/ ) {
         $buf .= '?torrent';
+    } elsif ( $path =~ /[&?]location($|=|&)/ ) {
+        $buf .= '?location';
     }
 
     return $buf;

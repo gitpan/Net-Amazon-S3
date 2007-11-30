@@ -1,5 +1,9 @@
 Revision history for Perl module Net::Amazon::S3:
 
+0.41 Fri Nov 30 10:42:26 GMT 2007
+     - fix the expensive tests (patch by BDOLAN)
+     - added support for EU buckets (patch by BDOLAN)
+
 0.40 Tue Oct 30 11:40:42 GMT 2007
      - fix for content length with empty keys by Mark A. Hershberger
      - get_key and get_key_filename now return content_length

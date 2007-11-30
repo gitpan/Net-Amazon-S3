@@ -1,9 +1,11 @@
 --- #YAML:1.0
 name:                Net-Amazon-S3
-version:             0.40
+version:             0.41
 abstract:            ~
 license:             perl
-generated_by:        ExtUtils::MakeMaker version 6.32
+author:              
+    - Leon Brocard <acme@astray.com>
+generated_by:        ExtUtils::MakeMaker version 6.38
 distribution_type:   module
 requires:     
     Class::Accessor::Fast:         0
@@ -18,7 +20,5 @@ requires:
     XML::LibXML:                   0
     XML::LibXML::XPathContext:     0
 meta-spec:
-    url:     http://module-build.sourceforge.net/META-spec-v1.2.html
-    version: 1.2
-author:
-    - Leon Brocard <acme@astray.com>
+    url:     http://module-build.sourceforge.net/META-spec-v1.3.html
+    version: 1.3

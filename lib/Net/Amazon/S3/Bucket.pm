@@ -85,7 +85,7 @@ sub _uri {
     my ( $self, $key ) = @_;
     return ($key)
         ? $self->bucket . "/" . $self->account->_urlencode($key)
-        : $self->bucket;
+        : $self->bucket . "/";
 }
 
 =head2 add_key
@@ -126,8 +126,17 @@ sub add_key {
         $conf->{'Content-Length'} ||= length $value;
     }
 
-    return $self->account->_send_request_expect_nothing( 'PUT',
-        $self->_uri($key), $conf, $value );
+    # If we're pushing to a bucket that's under DNS flux, we might get a 307
+    # Since LWP doesn't support actually waiting for a 100 Continue response,
+    # we'll just send a HEAD first to see what's going on
+
+    if ( ref($value) ) {
+        return $self->account->_send_request_expect_nothing_probed( 'PUT',
+            $self->_uri($key), $conf, $value );
+    } else {
+        return $self->account->_send_request_expect_nothing( 'PUT',
+            $self->_uri($key), $conf, $value );
+    }
 }
 
 =head2 add_key_filename
@@ -392,8 +401,8 @@ sub set_acl {
 
     my $path = $self->_uri( $conf->{key} ) . '?acl';
 
-    my $hash_ref =
-          ( $conf->{acl_short} )
+    my $hash_ref
+        = ( $conf->{acl_short} )
         ? { 'x-amz-acl' => $conf->{acl_short} }
         : {};
 
@@ -402,6 +411,27 @@ sub set_acl {
     return $self->account->_send_request_expect_nothing( 'PUT', $path,
         $hash_ref, $xml );
 
+}
+
+=head2 get_location_constraint
+
+Retrieves the location constraint set when the bucket was created. Returns a
+string (eg, 'EU'), or undef if no location constraint was set.
+
+=cut
+
+sub get_location_constraint {
+    my ($self) = @_;
+
+    my $xpc = $self->account->_send_request( 'GET',
+        $self->bucket . '/?location' );
+    return undef unless $xpc && !$self->account->_remember_errors($xpc);
+
+    my $lc = $xpc->findvalue("//s3:LocationConstraint");
+    if ( defined $lc && $lc eq '' ) {
+        $lc = undef;
+    }
+    return $lc;
 }
 
 # proxy up the err requests

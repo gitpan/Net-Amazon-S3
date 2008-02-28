@@ -1,5 +1,9 @@
 Revision history for Perl module Net::Amazon::S3:
 
+0.42 Thu Feb 28 06:39:59 GMT 2008
+     - add exponential backoff upon temporary errors with the new
+       retry option
+
 0.41 Fri Nov 30 10:42:26 GMT 2007
      - fix the expensive tests (patch by BDOLAN)
      - added support for EU buckets (patch by BDOLAN)

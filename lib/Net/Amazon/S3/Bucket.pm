@@ -3,6 +3,7 @@ use strict;
 use warnings;
 use Carp;
 use File::stat;
+use IO::File;
 use base qw(Class::Accessor::Fast);
 __PACKAGE__->mk_accessors(qw(bucket creation_date account));
 
@@ -460,13 +461,21 @@ sub _content_sub {
 
     croak "$filename not a readable file with fixed size"
         unless -r $filename and $remaining;
-    open DATA, "< $filename" or croak "Could not open $filename: $!";
+    my $fh = IO::File->new( $filename, 'r' )
+        or croak "Could not open $filename: $!";
 
     return sub {
         my $buffer;
 
+        # upon retries the file is closed and we must reopen it
+        unless ( $fh->opened ) {
+            $fh = IO::File->new( $filename, 'r' )
+                or croak "Could not open $filename: $!";
+            $remaining = $stat->size;
+        }
+
         # warn "read remaining $remaining";
-        unless ( my $read = read( DATA, $buffer, $blksize ) ) {
+        unless ( my $read = $fh->read( $buffer, $blksize ) ) {
 
 #                       warn "read $read buffer $buffer remaining $remaining";
             croak
@@ -474,7 +483,7 @@ sub _content_sub {
                 if $! and $remaining;
 
             # otherwise, we found EOF
-            close DATA
+            $fh->close
                 or croak "close of upload content $filename failed: $!";
             $buffer ||= ''
                 ;    # LWP expects an emptry string on finish, read returns 0

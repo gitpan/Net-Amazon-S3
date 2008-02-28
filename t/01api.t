@@ -23,7 +23,8 @@ my $aws_secret_access_key = $ENV{'AWS_ACCESS_KEY_SECRET'};
 
 my $s3 = Net::Amazon::S3->new(
     {   aws_access_key_id     => $aws_access_key_id,
-        aws_secret_access_key => $aws_secret_access_key
+        aws_secret_access_key => $aws_secret_access_key,
+        retry                 => 1,
     }
 );
 

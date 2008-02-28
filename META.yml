@@ -1,11 +1,11 @@
 --- #YAML:1.0
 name:                Net-Amazon-S3
-version:             0.41
+version:             0.42
 abstract:            ~
 license:             perl
 author:              
     - Leon Brocard <acme@astray.com>
-generated_by:        ExtUtils::MakeMaker version 6.38
+generated_by:        ExtUtils::MakeMaker version 6.42
 distribution_type:   module
 requires:     
     Class::Accessor::Fast:         0
@@ -13,7 +13,7 @@ requires:
     Digest::HMAC_SHA1:             0
     Digest::MD5::File:             0
     HTTP::Date:                    0
-    LWP::UserAgent:                0
+    LWP::UserAgent::Determined:    0
     MIME::Base64:                  0
     Test::More:                    0.01
     URI::Escape:                   0

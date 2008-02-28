@@ -15,6 +15,7 @@ Net::Amazon::S3 - Use the Amazon S3 - Simple Storage Service
   my $s3 = Net::Amazon::S3->new(
       {   aws_access_key_id     => $aws_access_key_id,
           aws_secret_access_key => $aws_secret_access_key,
+          retry                 => 1,
       }
   );
 
@@ -102,16 +103,16 @@ use Digest::HMAC_SHA1;
 use HTTP::Date;
 use MIME::Base64 qw(encode_base64);
 use Net::Amazon::S3::Bucket;
-use LWP::UserAgent;
+use LWP::UserAgent::Determined;
 use URI::Escape qw(uri_escape_utf8);
 use XML::LibXML;
 use XML::LibXML::XPathContext;
 
 use base qw(Class::Accessor::Fast);
 __PACKAGE__->mk_accessors(
-    qw(libxml aws_access_key_id aws_secret_access_key secure ua err errstr timeout)
+    qw(libxml aws_access_key_id aws_secret_access_key secure ua err errstr timeout retry)
 );
-our $VERSION = '0.41';
+our $VERSION = '0.42';
 
 my $AMAZON_HEADER_PREFIX = 'x-amz-';
 my $METADATA_PREFIX      = 'x-amz-meta-';
@@ -152,6 +153,12 @@ to S3. Defaults to C<0>.
 How many seconds should your script wait before bailing on a request to S3? Defaults
 to 30.
 
+=item retry
+
+If this library should retry upon errors. This option is recommended.
+This uses exponential backoff with retries after 1, 2, 4, 8, 16, 32 seconds, 
+as recommended by Amazon. Defaults to off.
+
 =back
 
 =cut
@@ -166,12 +173,23 @@ sub new {
     $self->secure(0)   if not defined $self->secure;
     $self->timeout(30) if not defined $self->timeout;
 
-    my $ua = LWP::UserAgent->new(
-        keep_alive            => $KEEP_ALIVE_CACHESIZE,
-        requests_redirectable => [qw(GET HEAD DELETE PUT)],
-    );
+    my $ua;
+    if ( $self->retry ) {
+        $ua = LWP::UserAgent::Determined->new(
+            keep_alive            => $KEEP_ALIVE_CACHESIZE,
+            requests_redirectable => [qw(GET HEAD DELETE PUT)],
+        );
+        $ua->timing('1,2,4,8,16,32');
+    } else {
+        $ua = LWP::UserAgent->new(
+            keep_alive            => $KEEP_ALIVE_CACHESIZE,
+            requests_redirectable => [qw(GET HEAD DELETE PUT)],
+        );
+    }
+
     $ua->timeout( $self->timeout );
     $ua->env_proxy;
+
     $self->ua($ua);
     $self->libxml( XML::LibXML->new );
     return $self;

@@ -1,5 +1,8 @@
 Revision history for Perl module Net::Amazon::S3:
 
+0.43 Sat Mar  1 10:55:54 GMT 2008
+     - add binmode() to support Windows (thanks to Gabriel Weinberg)
+
 0.42 Thu Feb 28 06:39:59 GMT 2008
      - add exponential backoff upon temporary errors with the new
        retry option

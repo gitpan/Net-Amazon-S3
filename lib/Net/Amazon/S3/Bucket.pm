@@ -463,6 +463,7 @@ sub _content_sub {
         unless -r $filename and $remaining;
     my $fh = IO::File->new( $filename, 'r' )
         or croak "Could not open $filename: $!";
+    $fh->binmode;
 
     return sub {
         my $buffer;
@@ -471,6 +472,7 @@ sub _content_sub {
         unless ( $fh->opened ) {
             $fh = IO::File->new( $filename, 'r' )
                 or croak "Could not open $filename: $!";
+            $fh->binmode;
             $remaining = $stat->size;
         }
 

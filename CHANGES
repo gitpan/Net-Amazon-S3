@@ -1,5 +1,9 @@
 Revision history for Perl module Net::Amazon::S3:
 
+0.44 Thu Mar 27 08:35:59 GMT 2008
+    - fix bug with storing files consisting of "0" (thanks to
+      Martin Atkins)
+
 0.43 Sat Mar  1 10:55:54 GMT 2008
      - add binmode() to support Windows (thanks to Gabriel Weinberg)
 

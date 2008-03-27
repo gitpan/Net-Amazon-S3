@@ -112,7 +112,7 @@ use base qw(Class::Accessor::Fast);
 __PACKAGE__->mk_accessors(
     qw(libxml aws_access_key_id aws_secret_access_key secure ua err errstr timeout retry)
 );
-our $VERSION = '0.43';
+our $VERSION = '0.44';
 
 my $AMAZON_HEADER_PREFIX = 'x-amz-';
 my $METADATA_PREFIX      = 'x-amz-meta-';
@@ -663,8 +663,8 @@ sub _make_request {
     my ( $self, $method, $path, $headers, $data, $metadata ) = @_;
     croak 'must specify method' unless $method;
     croak 'must specify path'   unless defined $path;
-    $headers  ||= {};
-    $data     ||= '';
+    $headers ||= {};
+    $data = '' if not defined $data;
     $metadata ||= {};
 
     my $http_headers = $self->_merge_meta( $headers, $metadata );

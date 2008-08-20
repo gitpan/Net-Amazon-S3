@@ -89,6 +89,20 @@ sub _uri {
         : $self->bucket . "/";
 }
 
+sub _conf_to_headers {
+    my ($self, $conf) = @_;
+    $conf = {} unless defined $conf;
+    $conf = { %$conf }; # clone it so as not to clobber the caller's copy
+
+    if ( $conf->{acl_short} ) {
+        $self->account->_validate_acl_short( $conf->{acl_short} );
+        $conf->{'x-amz-acl'} = $conf->{acl_short};
+        delete $conf->{acl_short};
+    }
+
+    return $conf;
+}
+
 =head2 add_key
 
 Takes three positional parameters:
@@ -112,13 +126,8 @@ Returns a boolean.
 # returns bool
 sub add_key {
     my ( $self, $key, $value, $conf ) = @_;
-    croak 'must specify key' unless $key && length $key;
-
-    if ( $conf->{acl_short} ) {
-        $self->account->_validate_acl_short( $conf->{acl_short} );
-        $conf->{'x-amz-acl'} = $conf->{acl_short};
-        delete $conf->{acl_short};
-    }
+    croak 'must specify key' unless defined $key && length $key;
+    $conf = $self->_conf_to_headers($conf);
 
     if ( ref($value) eq 'SCALAR' ) {
         $conf->{'Content-Length'} ||= -s $$value;
@@ -165,6 +174,81 @@ sub add_key_filename {
     return $self->add_key( $key, \$value, $conf );
 }
 
+=head2 copy_key
+
+Creates (or replaces) a key, copying its contents from another key elsewhere in S3.
+Takes the following parameters:
+
+=over
+
+=item key
+
+The key to (over)write
+
+=item source
+
+Where to copy the key from. Should be in the form C</I<bucketname>/I<keyname>>/.
+
+=item conf
+
+Optional configuration hash. If present and defined, the configuration (ACL
+and headers) there will be used for the new key; otherwise it will be copied
+from the source key.
+
+=back
+
+=cut
+
+sub copy_key {
+    my ( $self, $key, $source, $conf ) = @_;
+
+    if (defined $conf) {
+        $conf = $self->_conf_to_headers($conf);
+        $conf->{'x-amz-metadata-directive'} = 'REPLACE';
+    } else {
+        $conf = {};
+    }
+
+    $conf->{'x-amz-copy-source'} = $source;
+
+    my $acct = $self->account;
+    my $request = $acct->_make_request('PUT', $self->_uri($key), $conf);
+    my $response = $acct->_do_http($request);
+	my $xpc = $acct->_xpc_of_content($response->content);
+
+	if (!$response->is_success || !$xpc || $xpc->findnodes("//Error")) {
+		$acct->_remember_errors($response->content);
+		return 0;
+	}
+
+    return 1;
+}
+
+=head2 edit_metadata
+
+Changes the metadata associated with an existing key. Arguments:
+
+=over
+
+=item key
+
+The key to edit
+
+=item conf
+
+The new configuration hash to use
+
+=back
+
+=cut
+
+sub edit_metadata {
+    my ($self, $key, $conf) = @_;
+    croak "Need configuration hash" unless defined $conf;
+
+    return $self->copy_key($key, "/".$self->bucket."/".$key, $conf);
+}
+
 =head2 head_key KEY
 
 Takes the name of a key in this bucket and returns its configuration hash
@@ -187,7 +271,8 @@ Returns undef on missing content, throws an exception (dies) on server errors.
 
 On success:
 
-Returns a hashref of { content_type, etag, value, @meta } on success
+Returns a hashref of { content_type, etag, value, @meta } on success. Other
+values from the server are there too, with the key being lowercased.
 
 =cut
 
@@ -212,17 +297,14 @@ sub get_key {
         $etag =~ s/"$//;
     }
 
-    my $return = {
-        content_length => $response->content_length || 0,
-        content_type   => $response->content_type,
-        etag           => $etag,
-        value          => $response->content,
-    };
-
+    my $return;
     foreach my $header ( $response->headers->header_field_names ) {
-        next unless $header =~ /x-amz-meta-/i;
         $return->{ lc $header } = $response->header($header);
     }
+    $return->{content_length} = $response->content_length || 0;
+    $return->{content_type}   = $response->content_type;
+    $return->{etag}           = $etag;
+    $return->{value}          = $response->content;
 
     return $return;
 
@@ -260,7 +342,7 @@ Returns true on success and false on failure
 # returns bool
 sub delete_key {
     my ( $self, $key ) = @_;
-    croak 'must specify key' unless $key && length $key;
+    croak 'must specify key' unless defined $key && length $key;
     return $self->account->_send_request_expect_nothing( 'DELETE',
         $self->_uri($key), {} );
 }
@@ -460,7 +542,7 @@ sub _content_sub {
     my $blksize   = $stat->blksize || 4096;
 
     croak "$filename not a readable file with fixed size"
-        unless -r $filename and $remaining;
+        unless -r $filename and ( -f _ || $remaining );
     my $fh = IO::File->new( $filename, 'r' )
         or croak "Could not open $filename: $!";
     $fh->binmode;

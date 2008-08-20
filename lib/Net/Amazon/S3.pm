@@ -112,7 +112,7 @@ use base qw(Class::Accessor::Fast);
 __PACKAGE__->mk_accessors(
     qw(libxml aws_access_key_id aws_secret_access_key secure ua err errstr timeout retry)
 );
-our $VERSION = '0.44';
+our $VERSION = '0.45';
 
 my $AMAZON_HEADER_PREFIX = 'x-amz-';
 my $METADATA_PREFIX      = 'x-amz-meta-';
@@ -792,8 +792,16 @@ sub _xpc_of_content {
 # returns 1 if errors were found
 sub _remember_errors {
     my ( $self, $src ) = @_;
-    my $xpc = ref $src ? $src : $self->_xpc_of_content($src);
 
+    # Do not try to parse non-xml
+    unless ( ref $src || $src =~ m/^[[:space:]]*</ ) {
+        ( my $code = $src ) =~ s/^[[:space:]]*\([0-9]*\).*$/$1/;
+        $self->err($code);
+        $self->errstr($src);
+        return 1;
+    }
+
+    my $xpc = ref $src ? $src : $self->_xpc_of_content($src);
     if ( $xpc->findnodes("//Error") ) {
         $self->err( $xpc->findvalue("//Error/Code") );
         $self->errstr( $xpc->findvalue("//Error/Message") );

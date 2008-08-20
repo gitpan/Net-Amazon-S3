@@ -1,5 +1,18 @@
 Revision history for Perl module Net::Amazon::S3:
 
+0.45 Wed Aug 20 17:06:49 BST 2008
+    - make add_key, head_key etc. return all the headers, not
+      just the X-Amazon ones (patch by Andrew Hanenkamp)
+    - require IO::File 1.14 (noticed by tsw)
+    - remove DateTime::Format::Strptime prerequisite as it was not
+      being used (noticed by Yen-Ming Lee)
+    - do not try and parse non-XML errors (patch by lostlogic)
+    - make it possible to store and delete the key "0" 
+      (patch by Joey Hess)
+    - make it possible to store empty files (patch by BDOLAN)
+    - add Copy support (patch by BDOLAN)
+    - add s3cl for command-line access (patch by Leo Lapworth)
+
 0.44 Thu Mar 27 08:35:59 GMT 2008
     - fix bug with storing files consisting of "0" (thanks to
       Martin Atkins)

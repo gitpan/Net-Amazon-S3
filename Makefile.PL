@@ -9,10 +9,10 @@ WriteMakefile(
     LICENSE      => 'perl',
     PREREQ_PM    => {
         'Class::Accessor::Fast'      => '0',
-        'DateTime::Format::Strptime' => '0',
         'Digest::MD5::File'          => '0',
         'Digest::HMAC_SHA1'          => '0',
         'HTTP::Date'                 => '0',
+        'IO::File'                   => '1.14',
         'LWP::UserAgent::Determined' => '0',
         'MIME::Base64'               => '0',
         'Test::More'                 => '0.01',

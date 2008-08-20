@@ -9,7 +9,7 @@ use Test::More;
 unless ( $ENV{'AMAZON_S3_EXPENSIVE_TESTS'} ) {
     plan skip_all => 'Testing this module for real costs money.';
 } else {
-    plan tests => 63 * 2 + 4;
+    plan tests => 71 * 2 + 4;
 }
 
 use_ok('Net::Amazon::S3');
@@ -38,7 +38,7 @@ TODO: {
     local $TODO = "These tests only work if you're leon";
 
     like( $response->{owner_id}, qr/^46a801915a1711f/ );
-    is( $response->{owner_displayname}, '_acme_' );
+    is( $response->{owner_displayname},   '_acme_' );
     is( scalar @{ $response->{buckets} }, 2 );
 }
 
@@ -55,7 +55,7 @@ for my $location ( undef, 'EU' ) {
             location_constraint => $location
         }
     ) or die $s3->err . ": " . $s3->errstr;
-    is( ref $bucket_obj, "Net::Amazon::S3::Bucket" );
+    is( ref $bucket_obj,                      "Net::Amazon::S3::Bucket" );
     is( $bucket_obj->get_location_constraint, $location );
 
     like_acl_allusers_read($bucket_obj);
@@ -178,6 +178,41 @@ for my $location ( undef, 'EU' ) {
 
     }
 
+    {
+
+        # Copy a key, keeping metadata
+        my $keyname2 = 'testing2.txt';
+
+        $bucket_obj->copy_key( $keyname2, "/$bucketname/$keyname" );
+
+        is_request_response_code(
+            "http://$bucketname.s3.amazonaws.com/$keyname2",
+            403, "cannot access the private key" );
+
+        # Overwrite, making publically readable
+        $bucket_obj->copy_key( $keyname2, "/$bucketname/$keyname",
+            { acl_short => 'public-read' } );
+
+        sleep 1;
+        is_request_response_code(
+            "http://$bucketname.s3.amazonaws.com/$keyname2",
+            200, "can access the publicly readable key" );
+
+        # Now copy it over itself, making it private
+        $bucket_obj->edit_metadata( $keyname2, { short_acl => 'private' } );
+
+        is_request_response_code(
+            "http://$bucketname.s3.amazonaws.com/$keyname2",
+            403, "cannot access the private key" );
+
+        # Get rid of it, bringing us back to only one key
+        $bucket_obj->delete_key($keyname2);
+
+        # Expect a nonexistent key copy to fail
+        ok( !$bucket_obj->copy_key( "newkey", "/$bucketname/$keyname2" ),
+            "Copying a nonexistent key fails" );
+    }
+
     # list keys in the bucket
     $response = $bucket_obj->list
         or die $s3->err . ": " . $s3->errstr;
@@ -240,6 +275,19 @@ for my $location ( undef, 'EU' ) {
     is( $response->{content_type},   'binary/octet-stream' );
     is( $response->{content_length}, 0 );
     $bucket_obj->delete_key($keyname);
+
+    # how about using add_key_filename?
+    $keyname .= '4';
+    open FILE, ">", "t/empty" or die "Can't open t/empty for write: $!";
+    close FILE;
+    $bucket_obj->add_key_filename( $keyname, 't/empty' );
+    $response = $bucket_obj->get_key($keyname);
+    is( $response->{value},          '' );
+    is( $response->{etag},           'd41d8cd98f00b204e9800998ecf8427e' );
+    is( $response->{content_type},   'binary/octet-stream' );
+    is( $response->{content_length}, 0 );
+    $bucket_obj->delete_key($keyname);
+    unlink 't/empty';
 
     # fetch contents of the bucket
     # note prefix, marker, max_keys options can be passed in

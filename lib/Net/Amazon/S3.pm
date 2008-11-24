@@ -1,6 +1,6 @@
 package Net::Amazon::S3;
-use strict;
-use warnings;
+use Moose;
+use MooseX::StrictConstructor;
 
 =head1 NAME
 
@@ -96,26 +96,52 @@ I highly recommend reading all about S3, but in a nutshell data is
 stored in values. Values are referenced by keys, and keys are stored
 in buckets. Bucket names are global.
 
+Note: This is the legacy interface, please check out
+L<Net::Amazon::S3::Client> instead.
+
+Development of this code happens here: http://github.com/acme/net-amazon-s3
+
 =cut
 
 use Carp;
 use Digest::HMAC_SHA1;
-use HTTP::Date;
-use MIME::Base64 qw(encode_base64);
+
 use Net::Amazon::S3::Bucket;
+use Net::Amazon::S3::Client;
+use Net::Amazon::S3::Client::Bucket;
+use Net::Amazon::S3::Client::Object;
+use Net::Amazon::S3::HTTPRequest;
+use Net::Amazon::S3::Request;
+use Net::Amazon::S3::Request::CreateBucket;
+use Net::Amazon::S3::Request::DeleteBucket;
+use Net::Amazon::S3::Request::DeleteObject;
+use Net::Amazon::S3::Request::GetBucketAccessControl;
+use Net::Amazon::S3::Request::GetBucketLocationConstraint;
+use Net::Amazon::S3::Request::GetObject;
+use Net::Amazon::S3::Request::GetObjectAccessControl;
+use Net::Amazon::S3::Request::ListAllMyBuckets;
+use Net::Amazon::S3::Request::ListBucket;
+use Net::Amazon::S3::Request::PutObject;
+use Net::Amazon::S3::Request::SetBucketAccessControl;
+use Net::Amazon::S3::Request::SetObjectAccessControl;
 use LWP::UserAgent::Determined;
 use URI::Escape qw(uri_escape_utf8);
 use XML::LibXML;
 use XML::LibXML::XPathContext;
 
-use base qw(Class::Accessor::Fast);
-__PACKAGE__->mk_accessors(
-    qw(libxml aws_access_key_id aws_secret_access_key secure ua err errstr timeout retry)
-);
-our $VERSION = '0.45';
+has 'aws_access_key_id'     => ( is => 'ro', isa => 'Str', required => 1 );
+has 'aws_secret_access_key' => ( is => 'ro', isa => 'Str', required => 1 );
+has 'secure' => ( is => 'ro', isa => 'Bool', required => 0, default => 0 );
+has 'timeout' => ( is => 'ro', isa => 'Num',  required => 0, default => 30 );
+has 'retry'   => ( is => 'ro', isa => 'Bool', required => 0, default => 0 );
 
-my $AMAZON_HEADER_PREFIX = 'x-amz-';
-my $METADATA_PREFIX      = 'x-amz-meta-';
+has 'libxml' => ( is => 'rw', isa => 'XML::LibXML',    required => 0 );
+has 'ua'     => ( is => 'rw', isa => 'LWP::UserAgent', required => 0 );
+has 'err'    => ( is => 'rw', isa => 'Maybe[Str]',     required => 0 );
+has 'errstr' => ( is => 'rw', isa => 'Maybe[Str]',     required => 0 );
+
+our $VERSION = '0.46';
+
 my $KEEP_ALIVE_CACHESIZE = 10;
 
 =head1 METHODS
@@ -163,15 +189,8 @@ as recommended by Amazon. Defaults to off.
 
 =cut
 
-sub new {
-    my $class = shift;
-    my $self  = $class->SUPER::new(@_);
-
-    die "No aws_access_key_id"     unless $self->aws_access_key_id;
-    die "No aws_secret_access_key" unless $self->aws_secret_access_key;
-
-    $self->secure(0)   if not defined $self->secure;
-    $self->timeout(30) if not defined $self->timeout;
+sub BUILD {
+    my $self = shift;
 
     my $ua;
     if ( $self->retry ) {
@@ -192,7 +211,6 @@ sub new {
 
     $self->ua($ua);
     $self->libxml( XML::LibXML->new );
-    return $self;
 }
 
 =head2 buckets
@@ -203,7 +221,14 @@ Returns undef on error, else hashref of results
 
 sub buckets {
     my $self = shift;
-    my $xpc = $self->_send_request( 'GET', '', {} );
+
+    my $http_request
+        = Net::Amazon::S3::Request::ListAllMyBuckets->new( s3 => $self )
+        ->http_request;
+
+    # die $request->http_request->as_string;
+
+    my $xpc = $self->_send_request($http_request);
 
     return undef unless $xpc && !$self->_remember_errors($xpc);
 
@@ -257,31 +282,18 @@ Returns 0 on failure, Net::Amazon::S3::Bucket object on success
 
 sub add_bucket {
     my ( $self, $conf ) = @_;
-    my $bucket = $conf->{bucket};
-    croak 'must specify bucket' unless $bucket;
 
-    if ( $conf->{acl_short} ) {
-        $self->_validate_acl_short( $conf->{acl_short} );
-    }
-
-    my $header_ref
-        = ( $conf->{acl_short} )
-        ? { 'x-amz-acl' => $conf->{acl_short} }
-        : {};
-
-    my $data = '';
-    if ( defined $conf->{location_constraint} ) {
-        $data
-            = "<CreateBucketConfiguration><LocationConstraint>"
-            . $conf->{location_constraint}
-            . "</LocationConstraint></CreateBucketConfiguration>";
-    }
+    my $http_request = Net::Amazon::S3::Request::CreateBucket->new(
+        s3                  => $self,
+        bucket              => $conf->{bucket},
+        acl_short           => $conf->{acl_short},
+        location_constraint => $conf->{location_constraint},
+    )->http_request;
 
     return 0
-        unless $self->_send_request_expect_nothing( 'PUT', "$bucket/",
-        $header_ref, $data );
+        unless $self->_send_request_expect_nothing($http_request);
 
-    return $self->bucket($bucket);
+    return $self->bucket( $conf->{bucket} );
 }
 
 =head2 bucket BUCKET
@@ -325,7 +337,13 @@ sub delete_bucket {
         $bucket = $conf->{bucket};
     }
     croak 'must specify bucket' unless $bucket;
-    return $self->_send_request_expect_nothing( 'DELETE', $bucket . "/", {} );
+
+    my $http_request = Net::Amazon::S3::Request::DeleteBucket->new(
+        s3     => $self,
+        bucket => $bucket,
+    )->http_request;
+
+    return $self->_send_request_expect_nothing($http_request);
 }
 
 =head2 list_bucket
@@ -466,18 +484,17 @@ Each key is a hashref that looks like this:
 
 sub list_bucket {
     my ( $self, $conf ) = @_;
-    my $bucket = delete $conf->{bucket};
-    croak 'must specify bucket' unless $bucket;
-    $conf ||= {};
 
-    my $path = $bucket . "/";
-    if (%$conf) {
-        $path .= "?"
-            . join( '&',
-            map { $_ . "=" . $self->_urlencode( $conf->{$_} ) } keys %$conf );
-    }
+    my $http_request = Net::Amazon::S3::Request::ListBucket->new(
+        s3        => $self,
+        bucket    => $conf->{bucket},
+        delimiter => $conf->{delimiter},
+        max_keys  => $conf->{max_keys},
+        marker    => $conf->{marker},
+    )->http_request;
 
-    my $xpc = $self->_send_request( 'GET', $path, {} );
+    my $xpc = $self->_send_request($http_request);
+
     return undef unless $xpc && !$self->_remember_errors($xpc);
 
     my $return = {
@@ -637,69 +654,14 @@ sub _validate_acl_short {
     }
 }
 
-# EU buckets must be accessed via their DNS name. This routine figures out if
-# a given bucket name can be safely used as a DNS name.
-sub _is_dns_bucket {
-    my $bucketname = $_[0];
-
-    if ( length $bucketname > 63 ) {
-        return 0;
-    }
-    if ( length $bucketname < 3 ) {
-        return;
-    }
-    return 0 unless $bucketname =~ m{^[a-z0-9][a-z0-9.-]+$};
-    my @components = split /\./, $bucketname;
-    for my $c (@components) {
-        return 0 if $c =~ m{^-};
-        return 0 if $c =~ m{-$};
-        return 0 if $c eq '';
-    }
-    return 1;
-}
-
-# make the HTTP::Request object
-sub _make_request {
-    my ( $self, $method, $path, $headers, $data, $metadata ) = @_;
-    croak 'must specify method' unless $method;
-    croak 'must specify path'   unless defined $path;
-    $headers ||= {};
-    $data = '' if not defined $data;
-    $metadata ||= {};
-
-    my $http_headers = $self->_merge_meta( $headers, $metadata );
-
-    $self->_add_auth_header( $http_headers, $method, $path )
-        unless exists $headers->{Authorization};
-    my $protocol = $self->secure ? 'https' : 'http';
-    my $url = "$protocol://s3.amazonaws.com/$path";
-    if ( $path =~ m{^([^/?]+)(.*)} && _is_dns_bucket($1) ) {
-        $url = "$protocol://$1.s3.amazonaws.com$2";
-    }
-
-    my $request = HTTP::Request->new( $method, $url, $http_headers );
-    $request->content($data);
-
-    # my $req_as = $request->as_string;
-    # $req_as =~ s/[^\n\r\x20-\x7f]/?/g;
-    # $req_as = substr( $req_as, 0, 1024 ) . "\n\n";
-    # warn $req_as;
-
-    return $request;
-}
-
 # $self->_send_request($HTTP::Request)
 # $self->_send_request(@params_to_make_request)
 sub _send_request {
-    my $self = shift;
-    my $request;
-    if ( @_ == 1 ) {
-        $request = shift;
-    } else {
-        $request = $self->_make_request(@_);
-    }
+    my ( $self, $http_request ) = @_;
 
-    my $response = $self->_do_http($request);
+    # warn $http_request->as_string;
+
+    my $response = $self->_do_http($http_request);
     my $content  = $response->content;
 
     return $content unless $response->content_type eq 'application/xml';
@@ -709,19 +671,23 @@ sub _send_request {
 
 # centralize all HTTP work, for debugging
 sub _do_http {
-    my ( $self, $request, $filename ) = @_;
+    my ( $self, $http_request, $filename ) = @_;
+
+    confess 'Need HTTP::Request object'
+        if ( ref($http_request) ne 'HTTP::Request' );
 
     # convenient time to reset any error conditions
     $self->err(undef);
     $self->errstr(undef);
-    return $self->ua->request( $request, $filename );
+    return $self->ua->request( $http_request, $filename );
 }
 
 sub _send_request_expect_nothing {
-    my $self    = shift;
-    my $request = $self->_make_request(@_);
+    my ( $self, $http_request ) = @_;
 
-    my $response = $self->_do_http($request);
+    # warn $http_request->as_string;
+
+    my $response = $self->_do_http($http_request);
     my $content  = $response->content;
 
     return 1 if $response->code =~ /^2\d\d$/;
@@ -739,23 +705,29 @@ sub _send_request_expect_nothing {
 # first time we used it. Thus, we need to probe first to find out what's going on,
 # before we start sending any actual data.
 sub _send_request_expect_nothing_probed {
-    my $self = shift;
-    my ( $method, $path, $conf, $value ) = @_;
-    my $request = $self->_make_request( 'HEAD', $path );
+    my ( $self, $http_request ) = @_;
+
+    my $head = Net::Amazon::S3::HTTPRequest->new(
+        s3     => $self,
+        method => 'HEAD',
+        path   => $http_request->uri->path,
+    )->http_request;
+
+    #my $head_request = $self->_make_request( $head );
     my $override_uri = undef;
 
     my $old_redirectable = $self->ua->requests_redirectable;
     $self->ua->requests_redirectable( [] );
 
-    my $response = $self->_do_http($request);
+    my $response = $self->_do_http($head);
 
     if ( $response->code =~ /^3/ && defined $response->header('Location') ) {
         $override_uri = $response->header('Location');
     }
-    $request = $self->_make_request(@_);
-    $request->uri($override_uri) if defined $override_uri;
 
-    $response = $self->_do_http($request);
+    $http_request->uri($override_uri) if defined $override_uri;
+
+    $response = $self->_do_http($http_request);
     $self->ua->requests_redirectable($old_redirectable);
 
     my $content = $response->content;
@@ -781,7 +753,7 @@ sub _xpc_of_content {
     my ( $self, $content ) = @_;
     my $doc = $self->libxml->parse_string($content);
 
-    #warn $doc->toString(2);
+    # warn $doc->toString(1);
 
     my $xpc = XML::LibXML::XPathContext->new($doc);
     $xpc->registerNs( 's3', 'http://s3.amazonaws.com/doc/2006-03-01/' );
@@ -810,114 +782,6 @@ sub _remember_errors {
     return 0;
 }
 
-sub _add_auth_header {
-    my ( $self, $headers, $method, $path ) = @_;
-    my $aws_access_key_id     = $self->aws_access_key_id;
-    my $aws_secret_access_key = $self->aws_secret_access_key;
-
-    if ( not $headers->header('Date') ) {
-        $headers->header( Date => time2str(time) );
-    }
-    my $canonical_string
-        = $self->_canonical_string( $method, $path, $headers );
-    my $encoded_canonical
-        = $self->_encode( $aws_secret_access_key, $canonical_string );
-    $headers->header(
-        Authorization => "AWS $aws_access_key_id:$encoded_canonical" );
-}
-
-# generates an HTTP::Headers objects given one hash that represents http
-# headers to set and another hash that represents an object's metadata.
-sub _merge_meta {
-    my ( $self, $headers, $metadata ) = @_;
-    $headers  ||= {};
-    $metadata ||= {};
-
-    my $http_header = HTTP::Headers->new;
-    while ( my ( $k, $v ) = each %$headers ) {
-        $http_header->header( $k => $v );
-    }
-    while ( my ( $k, $v ) = each %$metadata ) {
-        $http_header->header( "$METADATA_PREFIX$k" => $v );
-    }
-
-    return $http_header;
-}
-
-# generate a canonical string for the given parameters.  expires is optional and is
-# only used by query string authentication.
-sub _canonical_string {
-    my ( $self, $method, $path, $headers, $expires ) = @_;
-    my %interesting_headers = ();
-    while ( my ( $key, $value ) = each %$headers ) {
-        my $lk = lc $key;
-        if (   $lk eq 'content-md5'
-            or $lk eq 'content-type'
-            or $lk eq 'date'
-            or $lk =~ /^$AMAZON_HEADER_PREFIX/ )
-        {
-            $interesting_headers{$lk} = $self->_trim($value);
-        }
-    }
-
-    # these keys get empty strings if they don't exist
-    $interesting_headers{'content-type'} ||= '';
-    $interesting_headers{'content-md5'}  ||= '';
-
-    # just in case someone used this.  it's not necessary in this lib.
-    $interesting_headers{'date'} = ''
-        if $interesting_headers{'x-amz-date'};
-
-    # if you're using expires for query string auth, then it trumps date
-    # (and x-amz-date)
-    $interesting_headers{'date'} = $expires if $expires;
-
-    my $buf = "$method\n";
-    foreach my $key ( sort keys %interesting_headers ) {
-        if ( $key =~ /^$AMAZON_HEADER_PREFIX/ ) {
-            $buf .= "$key:$interesting_headers{$key}\n";
-        } else {
-            $buf .= "$interesting_headers{$key}\n";
-        }
-    }
-
-    # don't include anything after the first ? in the resource...
-    $path =~ /^([^?]*)/;
-    $buf .= "/$1";
-
-    # ...unless there is an acl or torrent parameter
-    if ( $path =~ /[&?]acl($|=|&)/ ) {
-        $buf .= '?acl';
-    } elsif ( $path =~ /[&?]torrent($|=|&)/ ) {
-        $buf .= '?torrent';
-    } elsif ( $path =~ /[&?]location($|=|&)/ ) {
-        $buf .= '?location';
-    }
-
-    return $buf;
-}
-
-sub _trim {
-    my ( $self, $value ) = @_;
-    $value =~ s/^\s+//;
-    $value =~ s/\s+$//;
-    return $value;
-}
-
-# finds the hmac-sha1 hash of the canonical string and the aws secret access key and then
-# base64 encodes the result (optionally urlencoding after that).
-sub _encode {
-    my ( $self, $aws_secret_access_key, $str, $urlencode ) = @_;
-    my $hmac = Digest::HMAC_SHA1->new($aws_secret_access_key);
-    $hmac->add($str);
-    my $b64 = encode_base64( $hmac->digest, '' );
-    if ($urlencode) {
-        return $self->_urlencode($b64);
-    } else {
-        return $b64;
-    }
-}
-
 sub _urlencode {
     my ( $self, $unencoded ) = @_;
     return uri_escape_utf8( $unencoded, '^A-Za-z0-9_-' );
@@ -927,7 +791,7 @@ sub _urlencode {
 
 __END__
 
-=head1 ABOUT
+=head1 LICENSE
 
 This module contains code modified from Amazon that contains the
 following notice:

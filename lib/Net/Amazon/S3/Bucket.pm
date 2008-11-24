@@ -1,11 +1,13 @@
 package Net::Amazon::S3::Bucket;
-use strict;
-use warnings;
+use Moose;
+use MooseX::StrictConstructor;
 use Carp;
 use File::stat;
 use IO::File;
-use base qw(Class::Accessor::Fast);
-__PACKAGE__->mk_accessors(qw(bucket creation_date account));
+
+has 'account' => ( is => 'ro', isa => 'Net::Amazon::S3', required => 1 );
+has 'bucket'  => ( is => 'ro', isa => 'Str',             required => 1 );
+has 'creation_date' => ( is => 'ro', isa => 'Maybe[Str]', required => 0 );
 
 =head1 NAME
 
@@ -74,14 +76,6 @@ Create a new bucket object. Expects a hash containing these two arguments:
 
 =cut
 
-sub new {
-    my $class = shift;
-    my $self  = $class->SUPER::new(@_);
-    croak "no bucket"  unless $self->bucket;
-    croak "no account" unless $self->account;
-    return $self;
-}
-
 sub _uri {
     my ( $self, $key ) = @_;
     return ($key)
@@ -90,9 +84,9 @@ sub _uri {
 }
 
 sub _conf_to_headers {
-    my ($self, $conf) = @_;
+    my ( $self, $conf ) = @_;
     $conf = {} unless defined $conf;
-    $conf = { %$conf }; # clone it so as not to clobber the caller's copy
+    $conf = {%$conf};    # clone it so as not to clobber the caller's copy
 
     if ( $conf->{acl_short} ) {
         $self->account->_validate_acl_short( $conf->{acl_short} );
@@ -126,8 +120,6 @@ Returns a boolean.
 # returns bool
 sub add_key {
     my ( $self, $key, $value, $conf ) = @_;
-    croak 'must specify key' unless defined $key && length $key;
-    $conf = $self->_conf_to_headers($conf);
 
     if ( ref($value) eq 'SCALAR' ) {
         $conf->{'Content-Length'} ||= -s $$value;
@@ -136,16 +128,29 @@ sub add_key {
         $conf->{'Content-Length'} ||= length $value;
     }
 
+    my $acl_short;
+    if ( $conf->{acl_short} ) {
+        $acl_short = $conf->{acl_short};
+        delete $conf->{acl_short};
+    }
+
+    my $http_request = Net::Amazon::S3::Request::PutObject->new(
+        s3        => $self->account,
+        bucket    => $self->bucket,
+        key       => $key,
+        value     => $value,
+        acl_short => $acl_short,
+        headers   => $conf,
+    )->http_request;
+
     # If we're pushing to a bucket that's under DNS flux, we might get a 307
     # Since LWP doesn't support actually waiting for a 100 Continue response,
     # we'll just send a HEAD first to see what's going on
 
     if ( ref($value) ) {
-        return $self->account->_send_request_expect_nothing_probed( 'PUT',
-            $self->_uri($key), $conf, $value );
+        return $self->account->_send_request_expect_nothing_probed($http_request);
     } else {
-        return $self->account->_send_request_expect_nothing( 'PUT',
-            $self->_uri($key), $conf, $value );
+        return $self->account->_send_request_expect_nothing($http_request);
     }
 }
 
@@ -202,8 +207,12 @@ from the source key.
 sub copy_key {
     my ( $self, $key, $source, $conf ) = @_;
 
-    if (defined $conf) {
-        $conf = $self->_conf_to_headers($conf);
+    my $acl_short;
+    if ( defined $conf ) {
+        if ( $conf->{acl_short} ) {
+            $acl_short = $conf->{acl_short};
+            delete $conf->{acl_short};
+        }
         $conf->{'x-amz-metadata-directive'} = 'REPLACE';
     } else {
         $conf = {};
@@ -211,15 +220,23 @@ sub copy_key {
 
     $conf->{'x-amz-copy-source'} = $source;
 
-    my $acct = $self->account;
-    my $request = $acct->_make_request('PUT', $self->_uri($key), $conf);
-    my $response = $acct->_do_http($request);
-	my $xpc = $acct->_xpc_of_content($response->content);
+    my $acct    = $self->account;
+    my $http_request = Net::Amazon::S3::Request::PutObject->new(
+        s3        => $self->account,
+        bucket    => $self->bucket,
+        key       => $key,
+        value     => '',
+        acl_short => $acl_short,
+        headers   => $conf,
+    )->http_request;
 
-	if (!$response->is_success || !$xpc || $xpc->findnodes("//Error")) {
-		$acct->_remember_errors($response->content);
-		return 0;
-	}
+    my $response = $acct->_do_http( $http_request );
+    my $xpc      = $acct->_xpc_of_content( $response->content );
+
+    if ( !$response->is_success || !$xpc || $xpc->findnodes("//Error") ) {
+        $acct->_remember_errors( $response->content );
+        return 0;
+    }
 
     return 1;
 }
@@ -243,10 +260,10 @@ The new configuration hash to use
 =cut
 
 sub edit_metadata {
-    my ($self, $key, $conf) = @_;
+    my ( $self, $key, $conf ) = @_;
     croak "Need configuration hash" unless defined $conf;
 
-    return $self->copy_key($key, "/".$self->bucket."/".$key, $conf);
+    return $self->copy_key( $key, "/" . $self->bucket . "/" . $key, $conf );
 }
 
 =head2 head_key KEY
@@ -278,12 +295,17 @@ values from the server are there too, with the key being lowercased.
 
 sub get_key {
     my ( $self, $key, $method, $filename ) = @_;
-    $method ||= "GET";
     $filename = $$filename if ref $filename;
     my $acct = $self->account;
 
-    my $request = $acct->_make_request( $method, $self->_uri($key), {} );
-    my $response = $acct->_do_http( $request, $filename );
+    my $http_request = Net::Amazon::S3::Request::GetObject->new(
+        s3     => $acct,
+        bucket => $self->bucket,
+        key    => $key,
+        method => $method || 'GET',
+    )->http_request;
+
+    my $response = $acct->_do_http( $http_request, $filename );
 
     if ( $response->code == 404 ) {
         return undef;
@@ -343,8 +365,14 @@ Returns true on success and false on failure
 sub delete_key {
     my ( $self, $key ) = @_;
     croak 'must specify key' unless defined $key && length $key;
-    return $self->account->_send_request_expect_nothing( 'DELETE',
-        $self->_uri($key), {} );
+
+    my $http_request = Net::Amazon::S3::Request::DeleteObject->new(
+        s3     => $self->account,
+        bucket => $self->bucket,
+        key    => $key,
+    )->http_request;
+
+    return $self->account->_send_request_expect_nothing($http_request);
 }
 
 =head2 delete_bucket
@@ -412,17 +440,29 @@ Returns an acl in XML format.
 
 sub get_acl {
     my ( $self, $key ) = @_;
-    my $acct = $self->account;
+    my $account = $self->account;
 
-    my $request
-        = $acct->_make_request( 'GET', $self->_uri($key) . '?acl', {} );
-    my $response = $acct->_do_http($request);
+    my $http_request;
+    if ($key) {
+        $http_request = Net::Amazon::S3::Request::GetObjectAccessControl->new(
+            s3     => $account,
+            bucket => $self->bucket,
+            key    => $key,
+        )->http_request;
+    } else {
+        $http_request = Net::Amazon::S3::Request::GetBucketAccessControl->new(
+            s3     => $account,
+            bucket => $self->bucket,
+        )->http_request;
+    }
+
+    my $response = $account->_do_http($http_request);
 
     if ( $response->code == 404 ) {
         return undef;
     }
 
-    $acct->_croak_if_response_error($response);
+    $account->_croak_if_response_error($response);
 
     return $response->content;
 }
@@ -474,25 +514,27 @@ sub set_acl {
     my ( $self, $conf ) = @_;
     $conf ||= {};
 
-    unless ( $conf->{acl_xml} || $conf->{acl_short} ) {
-        croak "need either acl_xml or acl_short";
+    my $key = $conf->{key};
+    my $http_request;
+    if ($key) {
+        $http_request = Net::Amazon::S3::Request::SetObjectAccessControl->new(
+            s3        => $self->account,
+            bucket    => $self->bucket,
+            key       => $key,
+            acl_short => $conf->{acl_short},
+            acl_xml   => $conf->{acl_xml},
+        )->http_request;
+    } else {
+        $http_request = Net::Amazon::S3::Request::SetBucketAccessControl->new(
+            s3     => $self->account,
+            bucket => $self->bucket,
+
+            acl_short => $conf->{acl_short},
+            acl_xml   => $conf->{acl_xml},
+        )->http_request;
     }
 
-    if ( $conf->{acl_xml} && $conf->{acl_short} ) {
-        croak "cannot provide both acl_xml and acl_short";
-    }
-
-    my $path = $self->_uri( $conf->{key} ) . '?acl';
-
-    my $hash_ref
-        = ( $conf->{acl_short} )
-        ? { 'x-amz-acl' => $conf->{acl_short} }
-        : {};
-
-    my $xml = $conf->{acl_xml} || '';
-
-    return $self->account->_send_request_expect_nothing( 'PUT', $path,
-        $hash_ref, $xml );
+    return $self->account->_send_request_expect_nothing($http_request);
 
 }
 
@@ -506,8 +548,12 @@ string (eg, 'EU'), or undef if no location constraint was set.
 sub get_location_constraint {
     my ($self) = @_;
 
-    my $xpc = $self->account->_send_request( 'GET',
-        $self->bucket . '/?location' );
+    my $http_request = Net::Amazon::S3::Request::GetBucketLocationConstraint->new(
+        s3     => $self->account,
+        bucket => $self->bucket,
+    )->http_request;
+
+    my $xpc = $self->account->_send_request($http_request);
     return undef unless $xpc && !$self->account->_remember_errors($xpc);
 
     my $lc = $xpc->findvalue("//s3:LocationConstraint");

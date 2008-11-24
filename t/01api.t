@@ -1,5 +1,4 @@
-#!/usr/bin/perl -w
-
+#!perl
 use warnings;
 use strict;
 use lib 'lib';
@@ -13,8 +12,6 @@ unless ( $ENV{'AMAZON_S3_EXPENSIVE_TESTS'} ) {
 }
 
 use_ok('Net::Amazon::S3');
-
-# this synopsis is presented as a test file
 
 use vars qw/$OWNER_ID $OWNER_DISPLAYNAME/;
 
@@ -39,7 +36,7 @@ TODO: {
 
     like( $response->{owner_id}, qr/^46a801915a1711f/ );
     is( $response->{owner_displayname},   '_acme_' );
-    is( scalar @{ $response->{buckets} }, 2 );
+    is( scalar @{ $response->{buckets} }, 9 );
 }
 
 for my $location ( undef, 'EU' ) {
@@ -49,12 +46,17 @@ for my $location ( undef, 'EU' ) {
   # we use the same bucket name for both in order to force one or the other to
   # have stale DNS
     my $bucketname = 'net-amazon-s3-test-' . lc $aws_access_key_id;
+
+    # for testing
+    # my $bucket = $s3->bucket($bucketname); $bucket->delete_bucket; exit;
+
     my $bucket_obj = $s3->add_bucket(
         {   bucket              => $bucketname,
             acl_short           => 'public-read',
             location_constraint => $location
         }
     ) or die $s3->err . ": " . $s3->errstr;
+
     is( ref $bucket_obj,                      "Net::Amazon::S3::Bucket" );
     is( $bucket_obj->get_location_constraint, $location );
 
@@ -71,6 +73,7 @@ for my $location ( undef, 'EU' ) {
     # note prefix, marker, max_keys options can be passed in
     $response = $bucket_obj->list
         or die $s3->err . ": " . $s3->errstr;
+
     is( $response->{bucket},       $bucketname );
     is( $response->{prefix},       '' );
     is( $response->{marker},       '' );
@@ -211,6 +214,7 @@ for my $location ( undef, 'EU' ) {
         # Expect a nonexistent key copy to fail
         ok( !$bucket_obj->copy_key( "newkey", "/$bucketname/$keyname2" ),
             "Copying a nonexistent key fails" );
+
     }
 
     # list keys in the bucket
@@ -248,6 +252,7 @@ for my $location ( undef, 'EU' ) {
             'x-amz-meta-colour' => 'orangy',
         }
     );
+
     $response = $bucket_obj->get_key($keyname);
     is( $response->{content_type}, 'text/plain' );
     like( $response->{value}, qr/and unknown Amazon/ );
@@ -257,6 +262,7 @@ for my $location ( undef, 'EU' ) {
 
     unlink('t/README');
     $response = $bucket_obj->get_key_filename( $keyname, undef, 't/README' );
+
     is( $response->{content_type},        'text/plain' );
     is( $response->{value},               '' );
     is( $response->{etag},                $readme_md5 );

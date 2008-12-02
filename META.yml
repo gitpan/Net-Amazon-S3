@@ -1,6 +1,6 @@
 --- #YAML:1.0
 name:                Net-Amazon-S3
-version:             0.46
+version:             0.47
 abstract:            Use the Amazon S3 - Simple Storage Service
 license:             perl
 author:              

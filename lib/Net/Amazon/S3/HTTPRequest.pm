@@ -4,6 +4,8 @@ use MooseX::StrictConstructor;
 use HTTP::Date;
 use MIME::Base64 qw(encode_base64);
 use Moose::Util::TypeConstraints;
+use URI::QueryParam;
+
 my $METADATA_PREFIX      = 'x-amz-meta-';
 my $AMAZON_HEADER_PREFIX = 'x-amz-';
 
@@ -18,6 +20,8 @@ has 'content' =>
     ( is => 'ro', isa => 'Str|CodeRef', required => 0, default => '' );
 has 'metadata' =>
     ( is => 'ro', isa => 'HashRef', required => 0, default => sub { {} } );
+
+__PACKAGE__->meta->make_immutable;
 
 # make the HTTP::Request object
 sub http_request {
@@ -47,6 +51,29 @@ sub http_request {
     # warn $req_as;
 
     return $request;
+}
+
+sub query_string_authentication_uri {
+    my ( $self, $expires ) = @_;
+    my $method  = $self->method;
+    my $path    = $self->path;
+    my $headers = $self->headers;
+
+    my $aws_access_key_id     = $self->s3->aws_access_key_id;
+    my $aws_secret_access_key = $self->s3->aws_secret_access_key;
+    my $canonical_string
+        = $self->_canonical_string( $method, $path, $headers, $expires );
+    my $encoded_canonical
+        = $self->_encode( $aws_secret_access_key, $canonical_string );
+
+    my $protocol = $self->s3->secure ? 'https' : 'http';
+    my $uri = URI->new("$protocol://s3.amazonaws.com/$path");
+
+    $uri->query_param( AWSAccessKeyId => $aws_access_key_id );
+    $uri->query_param( Expires        => $expires );
+    $uri->query_param( Signature      => $encoded_canonical );
+
+    return $uri;
 }
 
 sub _add_auth_header {
@@ -212,3 +239,7 @@ appropriately for Amazon S3.
 
 This method creates, signs and returns a HTTP::Request object.
 
+=head2 query_string_authentication_uri
+
+This method creates, signs and returns a query string authentication
+URI.

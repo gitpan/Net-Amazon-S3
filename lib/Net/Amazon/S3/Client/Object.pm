@@ -1,6 +1,7 @@
 package Net::Amazon::S3::Client::Object;
 use Moose;
 use MooseX::StrictConstructor;
+use DateTime::Format::HTTP;
 use DateTime::Format::ISO8601;
 use Digest::MD5 qw(md5 md5_hex);
 use Digest::MD5::File qw(file_md5 file_md5_hex);
@@ -20,6 +21,8 @@ has 'etag' => ( is => 'ro', isa => 'Etag', required => 0 );
 has 'size' => ( is => 'ro', isa => 'Int',  required => 0 );
 has 'last_modified' =>
     ( is => 'ro', isa => 'DateTime', coerce => 1, required => 0 );
+has 'expires' =>
+    ( is => 'rw', isa => 'DateTime', coerce => 1, required => 0 );
 has 'acl_short' =>
     ( is => 'ro', isa => 'AclShort', required => 0, default => 'private' );
 has 'content_type' => (
@@ -28,6 +31,8 @@ has 'content_type' => (
     required => 0,
     default  => 'binary/octet-stream'
 );
+
+__PACKAGE__->meta->make_immutable;
 
 sub get {
     my $self = shift;
@@ -89,6 +94,11 @@ sub put {
         'Content-Type'   => $self->content_type,
     };
 
+    if ( $self->expires ) {
+        $conf->{Expires}
+            = DateTime::Format::HTTP->format_datetime( $self->expires );
+    }
+
     my $http_request = Net::Amazon::S3::Request::PutObject->new(
         s3        => $self->client->s3,
         bucket    => $self->bucket->name,
@@ -127,6 +137,11 @@ sub put_filename {
         'Content-Type'   => $self->content_type,
     };
 
+    if ( $self->expires ) {
+        $conf->{Expires}
+            = DateTime::Format::HTTP->format_datetime( $self->expires );
+    }
+
     my $http_request = Net::Amazon::S3::Request::PutObject->new(
         s3        => $self->client->s3,
         bucket    => $self->bucket->name,
@@ -164,6 +179,16 @@ sub uri {
         key    => $self->key,
         method => 'GET',
     )->http_request->uri;
+}
+
+sub query_string_authentication_uri {
+    my $self = shift;
+    return Net::Amazon::S3::Request::GetObject->new(
+        s3     => $self->client->s3,
+        bucket => $self->bucket->name,
+        key    => $self->key,
+        method => 'GET',
+    )->query_string_authentication_uri( $self->expires->epoch );
 }
 
 sub _content_sub {
@@ -251,11 +276,12 @@ Net::Amazon::S3::Client::Object - An easy-to-use Amazon S3 client object
   $object->delete;
 
   # to create a new object which is publically-accessible with a
-  # content-type of text/plain
+  # content-type of text/plain which expires on 2010-01-02
   my $object = $bucket->object(
     key          => 'this is the public key',
     acl_short    => 'public-read',
     content_type => 'text/plain',
+    expires      => '2010-01-02',
   );
   $object->put('this is the public value');
 
@@ -281,6 +307,13 @@ Net::Amazon::S3::Client::Object - An easy-to-use Amazon S3 client object
   # download the value of the object into a file
   my $object = $bucket->object( key => 'images/my_hat.jpg' );
   $object->get_filename('hat_backup.jpg');
+
+  # use query string authentication
+  my $object = $bucket->object(
+    key          => 'images/my_hat.jpg',
+    expires      => '2009-03-01',
+  );
+  my $uri = $object->query_string_authentication_uri();
 
 =head1 DESCRIPTION
 
@@ -347,6 +380,15 @@ This module represents objects in buckets.
     size         => $size,
   );
   $object->put_filename('hat.jpg');
+
+=head2 query_string_authentication_uri
+
+  # use query string authentication
+  my $object = $bucket->object(
+    key          => 'images/my_hat.jpg',
+    expires      => '2009-03-01',
+  );
+  my $uri = $object->query_string_authentication_uri();
 
 =head2 size
 

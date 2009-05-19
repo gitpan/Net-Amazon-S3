@@ -1,6 +1,6 @@
 --- #YAML:1.0
 name:                Net-Amazon-S3
-version:             0.50
+version:             0.51
 abstract:            Use the Amazon S3 - Simple Storage Service
 license:             perl
 author:              
@@ -23,6 +23,7 @@ requires:
     MIME::Base64:                  0
     Moose:                         0
     MooseX::StrictConstructor:     0
+    MooseX::Types::DateTimeX:      0
     Regexp::Common:                0
     Test::More:                    0.01
     URI::Escape:                   0

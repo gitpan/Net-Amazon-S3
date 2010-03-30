@@ -30,8 +30,27 @@ has 'content_type' => (
     required => 0,
     default  => 'binary/octet-stream'
 );
+has 'content_encoding' => (
+    is       => 'ro',
+    isa      => 'Str',
+    required => 0,
+);
 
 __PACKAGE__->meta->make_immutable;
+
+sub exists {
+    my $self = shift;
+
+    my $http_request = Net::Amazon::S3::Request::GetObject->new(
+        s3     => $self->client->s3,
+        bucket => $self->bucket->name,
+        key    => $self->key,
+        method => 'HEAD',
+    )->http_request;
+
+    my $http_response = $self->client->_send_request_raw($http_request);
+    return $http_response->code == 200 ? 1 : 0;
+}
 
 sub get {
     my $self = shift;
@@ -97,6 +116,9 @@ sub put {
         $conf->{Expires}
             = DateTime::Format::HTTP->format_datetime( $self->expires );
     }
+    if ( $self->content_encoding ) {
+        $conf->{'Content-Encoding'} = $self->content_encoding;
+    }
 
     my $http_request = Net::Amazon::S3::Request::PutObject->new(
         s3        => $self->client->s3,
@@ -139,6 +161,9 @@ sub put_filename {
     if ( $self->expires ) {
         $conf->{Expires}
             = DateTime::Format::HTTP->format_datetime( $self->expires );
+    }
+    if ( $self->content_encoding ) {
+        $conf->{'Content-Encoding'} = $self->content_encoding;
     }
 
     my $http_request = Net::Amazon::S3::Request::PutObject->new(
@@ -271,6 +296,9 @@ Net::Amazon::S3::Client::Object - An easy-to-use Amazon S3 client object
   # to get the vaue of an object
   my $value = $object->get;
 
+  # to see if an object exists
+  if ($object->exists) { ... }
+
   # to delete an object
   $object->delete;
 
@@ -331,6 +359,11 @@ This module represents objects in buckets.
   # to delete an object
   $object->delete;
 
+=head2 exists
+
+  # to see if an object exists
+  if ($object->exists) { ... }
+
 =head2 get
 
   # to get the vaue of an object
@@ -362,6 +395,8 @@ This module represents objects in buckets.
   );
   $object->put('this is the public value');
 
+You may also set Content-Encoding using content_encoding.
+
 =head2 put_filename 
 
   # upload a file
@@ -379,6 +414,8 @@ This module represents objects in buckets.
     size         => $size,
   );
   $object->put_filename('hat.jpg');
+
+You may also set Content-Encoding using content_encoding.
 
 =head2 query_string_authentication_uri
 

@@ -1,6 +1,6 @@
 package Net::Amazon::S3;
-use Moose;
-use MooseX::StrictConstructor;
+use Moose 0.85;
+use MooseX::StrictConstructor 0.16;
 
 =head1 NAME
 
@@ -144,7 +144,7 @@ has 'errstr' => ( is => 'rw', isa => 'Maybe[Str]',     required => 0 );
 
 __PACKAGE__->meta->make_immutable;
 
-our $VERSION = '0.55';
+our $VERSION = '0.56';
 
 my $KEEP_ALIVE_CACHESIZE = 10;
 

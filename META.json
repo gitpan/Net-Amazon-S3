@@ -46,7 +46,7 @@
             "LWP::UserAgent::Determined" : 0,
             "MIME::Base64" : 0,
             "Moose" : "0.85",
-            "MooseX::StrictConstructor" : "0.08",
+            "MooseX::StrictConstructor" : "0.16",
             "MooseX::Types::DateTime::MoreCoercions" : "0.07",
             "Regexp::Common" : 0,
             "Test::More" : "0.01",
@@ -57,5 +57,5 @@
       }
    },
    "release_status" : "stable",
-   "version" : "0.55"
+   "version" : "0.56"
 }

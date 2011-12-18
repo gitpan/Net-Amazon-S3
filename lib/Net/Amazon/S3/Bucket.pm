@@ -1,9 +1,9 @@
 package Net::Amazon::S3::Bucket;
-use Moose;
-use MooseX::StrictConstructor;
+use Moose 0.85;
+use MooseX::StrictConstructor 0.16;
 use Carp;
 use File::stat;
-use IO::File;
+use IO::File 1.14;
 
 has 'account' => ( is => 'ro', isa => 'Net::Amazon::S3', required => 1 );
 has 'bucket'  => ( is => 'ro', isa => 'Str',             required => 1 );
@@ -475,13 +475,13 @@ Takes a configuration hash_ref containing:
 
 =over
 
-=item acl_xml (cannot be used in conjuction with acl_short)
+=item acl_xml (cannot be used in conjunction with acl_short)
 
 An XML string which contains access control information which matches
 Amazon's published schema.  There is an example of one of these XML strings
 in the tests for this module.
 
-=item acl_short (cannot be used in conjuction with acl_xml)
+=item acl_short (cannot be used in conjunction with acl_xml)
 
 You can use the shorthand notation instead of specifying XML for
 certain 'canned' types of acls.

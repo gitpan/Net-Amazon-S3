@@ -1,4 +1,7 @@
 package Net::Amazon::S3::Client::Object;
+{
+  $Net::Amazon::S3::Client::Object::VERSION = '0.57';
+}
 use Moose 0.85;
 use MooseX::StrictConstructor 0.16;
 use DateTime::Format::HTTP;
@@ -9,6 +12,8 @@ use MIME::Base64;
 use Moose::Util::TypeConstraints;
 use MooseX::Types::DateTime::MoreCoercions 0.07 qw( DateTime );
 use IO::File 1.14;
+
+# ABSTRACT: An easy-to-use Amazon S3 client object
 
 enum 'AclShort' =>
     qw(private public-read public-read-write authenticated-read);
@@ -30,6 +35,11 @@ has 'content_type' => (
     isa      => 'Str',
     required => 0,
     default  => 'binary/octet-stream'
+);
+has 'content_disposition' => (
+    is => 'ro',
+    isa => 'Str',
+    required => 0,
 );
 has 'content_encoding' => (
     is       => 'ro',
@@ -120,6 +130,9 @@ sub put {
     if ( $self->content_encoding ) {
         $conf->{'Content-Encoding'} = $self->content_encoding;
     }
+    if ( $self->content_disposition ) {
+        $conf->{'Content-Disposition'} = $self->content_disposition;
+    }
 
     my $http_request = Net::Amazon::S3::Request::PutObject->new(
         s3        => $self->client->s3,
@@ -166,6 +179,10 @@ sub put_filename {
     if ( $self->content_encoding ) {
         $conf->{'Content-Encoding'} = $self->content_encoding;
     }
+    if ( $self->content_disposition ) {
+        $conf->{'Content-Disposition'} = $self->content_disposition;
+    }
+
 
     my $http_request = Net::Amazon::S3::Request::PutObject->new(
         s3        => $self->client->s3,
@@ -273,9 +290,15 @@ sub _etag {
 
 __END__
 
+=pod
+
 =head1 NAME
 
 Net::Amazon::S3::Client::Object - An easy-to-use Amazon S3 client object
+
+=head1 VERSION
+
+version 0.57
 
 =head1 SYNOPSIS
 
@@ -319,7 +342,7 @@ Net::Amazon::S3::Client::Object - An easy-to-use Amazon S3 client object
   # upload a file
   my $object = $bucket->object(
     key          => 'images/my_hat.jpg',
-    content_type => 'image/jpeg', 
+    content_type => 'image/jpeg',
   );
   $object->put_filename('hat.jpg');
 
@@ -346,6 +369,8 @@ Net::Amazon::S3::Client::Object - An easy-to-use Amazon S3 client object
 =head1 DESCRIPTION
 
 This module represents objects in buckets.
+
+=for test_synopsis no strict 'vars'
 
 =head1 METHODS
 
@@ -396,14 +421,15 @@ This module represents objects in buckets.
   );
   $object->put('this is the public value');
 
-You may also set Content-Encoding using content_encoding.
+You may also set Content-Encoding using content_encoding, and
+Content-Disposition using content_disposition.
 
-=head2 put_filename 
+=head2 put_filename
 
   # upload a file
   my $object = $bucket->object(
     key          => 'images/my_hat.jpg',
-    content_type => 'image/jpeg', 
+    content_type => 'image/jpeg',
   );
   $object->put_filename('hat.jpg');
 
@@ -416,7 +442,8 @@ You may also set Content-Encoding using content_encoding.
   );
   $object->put_filename('hat.jpg');
 
-You may also set Content-Encoding using content_encoding.
+You may also set Content-Encoding using content_encoding, and
+Content-Disposition using content_disposition.
 
 =head2 query_string_authentication_uri
 
@@ -438,3 +465,15 @@ You may also set Content-Encoding using content_encoding.
   # return the URI of a publically-accessible object
   my $uri = $object->uri;
 
+=head1 AUTHOR
+
+Pedro Figueiredo <me@pedrofigueiredo.org>
+
+=head1 COPYRIGHT AND LICENSE
+
+This software is copyright (c) 2012 by Amazon Digital Services, Leon Brocard, Brad Fitzpatrick, Pedro Figueiredo.
+
+This is free software; you can redistribute it and/or modify it under
+the same terms as the Perl 5 programming language system itself.
+
+=cut

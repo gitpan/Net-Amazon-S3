@@ -1,8 +1,13 @@
 package Net::Amazon::S3::Request;
+{
+  $Net::Amazon::S3::Request::VERSION = '0.57';
+}
 use Moose 0.85;
 use MooseX::StrictConstructor 0.16;
 use Moose::Util::TypeConstraints;
 use Regexp::Common qw /net/;
+
+# ABSTRACT: Base class for request objects
 
 enum 'AclShort' =>
     qw(private public-read public-read-write authenticated-read);
@@ -53,9 +58,15 @@ sub _uri {
 
 __END__
 
+=pod
+
 =head1 NAME
 
 Net::Amazon::S3::Request - Base class for request objects
+
+=head1 VERSION
+
+version 0.57
 
 =head1 SYNOPSIS
 
@@ -65,3 +76,16 @@ Net::Amazon::S3::Request - Base class for request objects
 
 This module is a base class for all the Net::Amazon::S3::Request::*
 classes.
+
+=head1 AUTHOR
+
+Pedro Figueiredo <me@pedrofigueiredo.org>
+
+=head1 COPYRIGHT AND LICENSE
+
+This software is copyright (c) 2012 by Amazon Digital Services, Leon Brocard, Brad Fitzpatrick, Pedro Figueiredo.
+
+This is free software; you can redistribute it and/or modify it under
+the same terms as the Perl 5 programming language system itself.
+
+=cut

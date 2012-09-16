@@ -1,8 +1,13 @@
 package Net::Amazon::S3::Client::Bucket;
+{
+  $Net::Amazon::S3::Client::Bucket::VERSION = '0.57';
+}
 use Moose 0.85;
 use MooseX::StrictConstructor 0.16;
 use Data::Stream::Bulk::Callback;
 use MooseX::Types::DateTime::MoreCoercions 0.07 qw( DateTime );
+
+# ABSTRACT: An easy-to-use Amazon S3 client bucket
 
 has 'client' =>
     ( is => 'ro', isa => 'Net::Amazon::S3::Client', required => 1 );
@@ -143,9 +148,15 @@ sub object {
 
 __END__
 
+=pod
+
 =head1 NAME
 
 Net::Amazon::S3::Client::Bucket - An easy-to-use Amazon S3 client bucket
+
+=head1 VERSION
+
+version 0.57
 
 =head1 SYNOPSIS
 
@@ -159,7 +170,7 @@ Net::Amazon::S3::Client::Bucket - An easy-to-use Amazon S3 client bucket
   my $acl = $bucket->acl;
 
   # list objects in the bucket
-  # this returns a L<Data::Stream::Bulk> object which returns a 
+  # this returns a L<Data::Stream::Bulk> object which returns a
   # stream of L<Net::Amazon::S3::Client::Object> objects, as it may
   # have to issue multiple API requests
   my $stream = $bucket->list;
@@ -183,6 +194,8 @@ Net::Amazon::S3::Client::Bucket - An easy-to-use Amazon S3 client bucket
 
 This module represents buckets.
 
+=for test_synopsis no strict 'vars'
+
 =head1 METHODS
 
 =head2 acl
@@ -198,7 +211,7 @@ This module represents buckets.
 =head2 list
 
   # list objects in the bucket
-  # this returns a L<Data::Stream::Bulk> object which returns a 
+  # this returns a L<Data::Stream::Bulk> object which returns a
   # stream of L<Net::Amazon::S3::Client::Object> objects, as it may
   # have to issue multiple API requests
   my $stream = $bucket->list;
@@ -227,3 +240,15 @@ This module represents buckets.
   # be used to get or put
   my $object = $bucket->object( key => 'this is the key' );
 
+=head1 AUTHOR
+
+Pedro Figueiredo <me@pedrofigueiredo.org>
+
+=head1 COPYRIGHT AND LICENSE
+
+This software is copyright (c) 2012 by Amazon Digital Services, Leon Brocard, Brad Fitzpatrick, Pedro Figueiredo.
+
+This is free software; you can redistribute it and/or modify it under
+the same terms as the Perl 5 programming language system itself.
+
+=cut

@@ -1,6 +1,6 @@
 package Net::Amazon::S3::Client;
 {
-  $Net::Amazon::S3::Client::VERSION = '0.57';
+  $Net::Amazon::S3::Client::VERSION = '0.58';
 }
 use Moose 0.85;
 use HTTP::Status qw(is_error status_message);
@@ -138,7 +138,7 @@ Net::Amazon::S3::Client - An easy-to-use Amazon S3 client
 
 =head1 VERSION
 
-version 0.57
+version 0.58
 
 =head1 SYNOPSIS
 

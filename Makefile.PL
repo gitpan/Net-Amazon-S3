@@ -53,6 +53,7 @@ my %WriteMakefileArgs = (
     "Regexp::Common" => 0,
     "Term::Encoding" => 0,
     "Term::ProgressBar::Simple" => 0,
+    "URI" => 0,
     "URI::Escape" => 0,
     "URI::QueryParam" => 0,
     "XML::LibXML" => 0,
@@ -60,7 +61,7 @@ my %WriteMakefileArgs = (
     "strict" => 0,
     "warnings" => 0
   },
-  "VERSION" => "0.57",
+  "VERSION" => "0.58",
   "test" => {
     "TESTS" => "t/*.t"
   }

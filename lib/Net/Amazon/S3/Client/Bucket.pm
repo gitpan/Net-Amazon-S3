@@ -1,6 +1,6 @@
 package Net::Amazon::S3::Client::Bucket;
 {
-  $Net::Amazon::S3::Client::Bucket::VERSION = '0.57';
+  $Net::Amazon::S3::Client::Bucket::VERSION = '0.58';
 }
 use Moose 0.85;
 use MooseX::StrictConstructor 0.16;
@@ -135,6 +135,18 @@ sub list {
     );
 }
 
+sub delete_multi_object {
+    my $self = shift;
+    my @objects = @_;
+    return unless( scalar(@objects) );
+    my $http_request = Net::Amazon::S3::Request::DeleteMultiObject->new(
+        s3      => $self->client->s3,
+        bucket  => $self->name,
+        keys    => [ map($_->key, @objects) ],
+    )->http_request;
+    return $self->client->_send_request($http_request);
+}
+
 sub object {
     my ( $self, %conf ) = @_;
     return Net::Amazon::S3::Client::Object->new(
@@ -143,6 +155,7 @@ sub object {
         %conf,
     );
 }
+
 
 1;
 
@@ -156,7 +169,7 @@ Net::Amazon::S3::Client::Bucket - An easy-to-use Amazon S3 client bucket
 
 =head1 VERSION
 
-version 0.57
+version 0.58
 
 =head1 SYNOPSIS
 
@@ -239,6 +252,13 @@ This module represents buckets.
   # returns a L<Net::Amazon::S3::Client::Object>, which can then
   # be used to get or put
   my $object = $bucket->object( key => 'this is the key' );
+
+=head2 delete_multi_object
+
+  # delete multiple objects using a multi object delete operation
+  # Accepts a list of L<Net::Amazon::S3::Client::Object> objects.
+  # Limited to a maximum of 1000 objects in one operation
+  $bucket->delete_multi_object($object1, $object2)
 
 =head1 AUTHOR
 

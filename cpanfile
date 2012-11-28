@@ -22,6 +22,7 @@ requires "Pod::Usage" => "0";
 requires "Regexp::Common" => "0";
 requires "Term::Encoding" => "0";
 requires "Term::ProgressBar::Simple" => "0";
+requires "URI" => "0";
 requires "URI::Escape" => "0";
 requires "URI::QueryParam" => "0";
 requires "XML::LibXML" => "0";

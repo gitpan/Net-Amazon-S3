@@ -43,6 +43,7 @@ requires:
   Regexp::Common: 0
   Term::Encoding: 0
   Term::ProgressBar::Simple: 0
+  URI: 0
   URI::Escape: 0
   URI::QueryParam: 0
   XML::LibXML: 0
@@ -52,4 +53,4 @@ requires:
 resources:
   bugtracker: https://github.com/pfig/net-amazon-s3/issues
   repository: https://github.com/pfig/net-amazon-s3.git
-version: 0.57
+version: 0.58

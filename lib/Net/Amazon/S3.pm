@@ -1,6 +1,6 @@
 package Net::Amazon::S3;
 {
-  $Net::Amazon::S3::VERSION = '0.57';
+  $Net::Amazon::S3::VERSION = '0.58';
 }
 use Moose 0.85;
 use MooseX::StrictConstructor 0.16;
@@ -17,16 +17,21 @@ use Net::Amazon::S3::Client::Bucket;
 use Net::Amazon::S3::Client::Object;
 use Net::Amazon::S3::HTTPRequest;
 use Net::Amazon::S3::Request;
+use Net::Amazon::S3::Request::CompleteMultipartUpload;
 use Net::Amazon::S3::Request::CreateBucket;
 use Net::Amazon::S3::Request::DeleteBucket;
+use Net::Amazon::S3::Request::DeleteMultiObject;
 use Net::Amazon::S3::Request::DeleteObject;
 use Net::Amazon::S3::Request::GetBucketAccessControl;
 use Net::Amazon::S3::Request::GetBucketLocationConstraint;
 use Net::Amazon::S3::Request::GetObject;
 use Net::Amazon::S3::Request::GetObjectAccessControl;
+use Net::Amazon::S3::Request::InitiateMultipartUpload;
 use Net::Amazon::S3::Request::ListAllMyBuckets;
 use Net::Amazon::S3::Request::ListBucket;
+use Net::Amazon::S3::Request::ListParts;
 use Net::Amazon::S3::Request::PutObject;
+use Net::Amazon::S3::Request::PutPart;
 use Net::Amazon::S3::Request::SetBucketAccessControl;
 use Net::Amazon::S3::Request::SetObjectAccessControl;
 use LWP::UserAgent::Determined;
@@ -57,13 +62,13 @@ sub BUILD {
     if ( $self->retry ) {
         $ua = LWP::UserAgent::Determined->new(
             keep_alive            => $KEEP_ALIVE_CACHESIZE,
-            requests_redirectable => [qw(GET HEAD DELETE PUT)],
+            requests_redirectable => [qw(GET HEAD DELETE PUT POST)],
         );
         $ua->timing('1,2,4,8,16,32');
     } else {
         $ua = LWP::UserAgent->new(
             keep_alive            => $KEEP_ALIVE_CACHESIZE,
-            requests_redirectable => [qw(GET HEAD DELETE PUT)],
+            requests_redirectable => [qw(GET HEAD DELETE PUT POST)],
         );
     }
 
@@ -440,7 +445,7 @@ Net::Amazon::S3 - Use the Amazon S3 - Simple Storage Service
 
 =head1 VERSION
 
-version 0.57
+version 0.58
 
 =head1 SYNOPSIS
 

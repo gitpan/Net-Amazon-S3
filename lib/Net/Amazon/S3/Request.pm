@@ -1,6 +1,6 @@
 package Net::Amazon::S3::Request;
 {
-  $Net::Amazon::S3::Request::VERSION = '0.57';
+  $Net::Amazon::S3::Request::VERSION = '0.58';
 }
 use Moose 0.85;
 use MooseX::StrictConstructor 0.16;
@@ -66,7 +66,7 @@ Net::Amazon::S3::Request - Base class for request objects
 
 =head1 VERSION
 
-version 0.57
+version 0.58
 
 =head1 SYNOPSIS
 

@@ -1,6 +1,6 @@
 package Net::Amazon::S3::Bucket;
 {
-  $Net::Amazon::S3::Bucket::VERSION = '0.57';
+  $Net::Amazon::S3::Bucket::VERSION = '0.58';
 }
 use Moose 0.85;
 use MooseX::StrictConstructor 0.16;
@@ -358,7 +358,7 @@ Net::Amazon::S3::Bucket - convenience object for working with Amazon S3 buckets
 
 =head1 VERSION
 
-version 0.57
+version 0.58
 
 =head1 SYNOPSIS
 

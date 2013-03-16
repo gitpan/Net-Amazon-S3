@@ -1,6 +1,9 @@
 Revision history for Perl module Net::Amazon::S3:
 
-0.58 Wed Nov 28 16:41:11 GMT 2012
+0.59 Sat Mar 16 09:43:25 GMT 2013
+
+0.59 Sat Mar 17 09:36:38 GMT 2013
+    - Added support for security token authentication (patch by Miquel Ruiz)
 
 0.58 Wed Nov 28 16:22:42 GMT 2012
     - Added support for multi-part upload and multiple objects deletion (patch

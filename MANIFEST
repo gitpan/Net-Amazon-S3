@@ -40,6 +40,7 @@ t/00-compile.t
 t/00use.t
 t/01api.t
 t/02client.t
+t/03token.t
 t/author-critic.t
 t/author-test-eol.t
 t/release-cpan-changes.t

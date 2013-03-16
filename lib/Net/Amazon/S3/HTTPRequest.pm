@@ -1,6 +1,6 @@
 package Net::Amazon::S3::HTTPRequest;
 {
-  $Net::Amazon::S3::HTTPRequest::VERSION = '0.58';
+  $Net::Amazon::S3::HTTPRequest::VERSION = '0.59';
 }
 use Moose 0.85;
 use MooseX::StrictConstructor 0.16;
@@ -91,10 +91,17 @@ sub _add_auth_header {
     my ( $self, $headers, $method, $path ) = @_;
     my $aws_access_key_id     = $self->s3->aws_access_key_id;
     my $aws_secret_access_key = $self->s3->aws_secret_access_key;
+    my $aws_session_token     = $self->s3->aws_session_token;
 
     if ( not $headers->header('Date') ) {
         $headers->header( Date => time2str(time) );
     }
+
+    if ( not $headers->header('x-amz-security-token') and
+         defined $aws_session_token ) {
+        $headers->header( 'x-amz-security-token' => $aws_session_token );
+    }
+
     my $canonical_string
         = $self->_canonical_string( $method, $path, $headers );
     my $encoded_canonical
@@ -238,7 +245,7 @@ Net::Amazon::S3::HTTPRequest - Create a signed HTTP::Request
 
 =head1 VERSION
 
-version 0.58
+version 0.59
 
 =head1 SYNOPSIS
 
@@ -274,7 +281,7 @@ Pedro Figueiredo <me@pedrofigueiredo.org>
 
 =head1 COPYRIGHT AND LICENSE
 
-This software is copyright (c) 2012 by Amazon Digital Services, Leon Brocard, Brad Fitzpatrick, Pedro Figueiredo.
+This software is copyright (c) 2013 by Amazon Digital Services, Leon Brocard, Brad Fitzpatrick, Pedro Figueiredo.
 
 This is free software; you can redistribute it and/or modify it under
 the same terms as the Perl 5 programming language system itself.

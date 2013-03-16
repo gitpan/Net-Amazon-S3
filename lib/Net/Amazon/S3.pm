@@ -1,6 +1,6 @@
 package Net::Amazon::S3;
 {
-  $Net::Amazon::S3::VERSION = '0.58';
+  $Net::Amazon::S3::VERSION = '0.59';
 }
 use Moose 0.85;
 use MooseX::StrictConstructor 0.16;
@@ -49,6 +49,7 @@ has 'libxml' => ( is => 'rw', isa => 'XML::LibXML',    required => 0 );
 has 'ua'     => ( is => 'rw', isa => 'LWP::UserAgent', required => 0 );
 has 'err'    => ( is => 'rw', isa => 'Maybe[Str]',     required => 0 );
 has 'errstr' => ( is => 'rw', isa => 'Maybe[Str]',     required => 0 );
+has 'aws_session_token' => ( is => 'ro', isa => 'Str', required => 0 );
 
 __PACKAGE__->meta->make_immutable;
 
@@ -445,7 +446,7 @@ Net::Amazon::S3 - Use the Amazon S3 - Simple Storage Service
 
 =head1 VERSION
 
-version 0.58
+version 0.59
 
 =head1 SYNOPSIS
 
@@ -568,6 +569,12 @@ to verify that a request containing your unique Access Key ID could
 only have come from you.
 
 DO NOT INCLUDE THIS IN SCRIPTS OR APPLICATIONS YOU DISTRIBUTE. YOU'LL BE SORRY
+
+=item aws_session_token
+
+If you are using temporary credentials provided by the AWS Security Token
+Service, set the token here, and it will be added to the request in order to
+authenticate it.
 
 =item secure
 
@@ -849,7 +856,7 @@ Pedro Figueiredo <me@pedrofigueiredo.org>
 
 =head1 COPYRIGHT AND LICENSE
 
-This software is copyright (c) 2012 by Amazon Digital Services, Leon Brocard, Brad Fitzpatrick, Pedro Figueiredo.
+This software is copyright (c) 2013 by Amazon Digital Services, Leon Brocard, Brad Fitzpatrick, Pedro Figueiredo.
 
 This is free software; you can redistribute it and/or modify it under
 the same terms as the Perl 5 programming language system itself.

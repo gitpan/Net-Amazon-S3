@@ -4,7 +4,7 @@ Net::Amazon::S3 - Use the Amazon S3 - Simple Storage Service
 
 # VERSION
 
-version 0.58
+version 0.59
 
 # SYNOPSIS
 
@@ -125,6 +125,12 @@ to verify that a request containing your unique Access Key ID could
 only have come from you.
 
 DO NOT INCLUDE THIS IN SCRIPTS OR APPLICATIONS YOU DISTRIBUTE. YOU'LL BE SORRY
+
+- aws\_session\_token
+
+If you are using temporary credentials provided by the AWS Security Token
+Service, set the token here, and it will be added to the request in order to
+authenticate it.
 
 - secure
 
@@ -380,7 +386,7 @@ Pedro Figueiredo <me@pedrofigueiredo.org>
 
 # COPYRIGHT AND LICENSE
 
-This software is copyright (c) 2012 by Amazon Digital Services, Leon Brocard, Brad Fitzpatrick, Pedro Figueiredo.
+This software is copyright (c) 2013 by Amazon Digital Services, Leon Brocard, Brad Fitzpatrick, Pedro Figueiredo.
 
 This is free software; you can redistribute it and/or modify it under
 the same terms as the Perl 5 programming language system itself.

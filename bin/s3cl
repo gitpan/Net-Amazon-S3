@@ -309,7 +309,7 @@ s3cl - Command line for Amazon s3 cloud storage
 
 =head1 VERSION
 
-version 0.59
+version 0.60
 
 =head1 SYNOPSIS
 
@@ -320,7 +320,7 @@ s3cl command [options]
   s3cl ls <bucket>:[prefix]
   s3cl cp <bucket>:<key> /path/[filename]
   s3cl sync <bucket>:[prefix] /path/
-  s3cl sync_up [--acl_short=public-read] /path/ <bucket>:[prefix]
+  s3cl sync_up [--acl_short=public-read] <bucket>:[prefix] /path/
   s3cl rm <bucket>:<key>
 
  Options:
@@ -350,7 +350,7 @@ Pedro Figueiredo <me@pedrofigueiredo.org>
 
 =head1 COPYRIGHT AND LICENSE
 
-This software is copyright (c) 2013 by Amazon Digital Services, Leon Brocard, Brad Fitzpatrick, Pedro Figueiredo.
+This software is copyright (c) 2014 by Amazon Digital Services, Leon Brocard, Brad Fitzpatrick, Pedro Figueiredo.
 
 This is free software; you can redistribute it and/or modify it under
 the same terms as the Perl 5 programming language system itself.
@@ -411,7 +411,7 @@ http://www.amazon.com/gp/browse.html?node=16427261
 
 =item B<sync_up>
 
-s3cl sync_up [--acl_short=public-read] /path/ <bucket>:[prefix]
+s3cl sync_up [--acl_short=public-read] <bucket>:[prefix] /path/
 
 Upload all the files below /path/ to S3, with an optional
 prefix at the start of the key name. The existing S3 files and

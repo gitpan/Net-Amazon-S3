@@ -1,6 +1,6 @@
 package Net::Amazon::S3::HTTPRequest;
 {
-  $Net::Amazon::S3::HTTPRequest::VERSION = '0.59';
+  $Net::Amazon::S3::HTTPRequest::VERSION = '0.60';
 }
 use Moose 0.85;
 use MooseX::StrictConstructor 0.16;
@@ -16,7 +16,7 @@ use URI;
 my $METADATA_PREFIX      = 'x-amz-meta-';
 my $AMAZON_HEADER_PREFIX = 'x-amz-';
 
-enum 'HTTPMethod' => qw(DELETE GET HEAD PUT POST);
+enum 'HTTPMethod' => [ qw(DELETE GET HEAD PUT POST) ];
 
 has 's3'     => ( is => 'ro', isa => 'Net::Amazon::S3', required => 1 );
 has 'method' => ( is => 'ro', isa => 'HTTPMethod',      required => 1 );
@@ -245,7 +245,7 @@ Net::Amazon::S3::HTTPRequest - Create a signed HTTP::Request
 
 =head1 VERSION
 
-version 0.59
+version 0.60
 
 =head1 SYNOPSIS
 
@@ -281,7 +281,7 @@ Pedro Figueiredo <me@pedrofigueiredo.org>
 
 =head1 COPYRIGHT AND LICENSE
 
-This software is copyright (c) 2013 by Amazon Digital Services, Leon Brocard, Brad Fitzpatrick, Pedro Figueiredo.
+This software is copyright (c) 2014 by Amazon Digital Services, Leon Brocard, Brad Fitzpatrick, Pedro Figueiredo.
 
 This is free software; you can redistribute it and/or modify it under
 the same terms as the Perl 5 programming language system itself.

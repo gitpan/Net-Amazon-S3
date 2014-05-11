@@ -1,6 +1,6 @@
 package Net::Amazon::S3::Request::ListParts;
 {
-  $Net::Amazon::S3::Request::ListParts::VERSION = '0.59';
+  $Net::Amazon::S3::Request::ListParts::VERSION = '0.60';
 }
 
 # ABSTRACT: List the parts in a multipart upload.
@@ -46,7 +46,7 @@ Net::Amazon::S3::Request::ListParts - List the parts in a multipart upload.
 
 =head1 VERSION
 
-version 0.59
+version 0.60
 
 =head1 AUTHOR
 
@@ -54,7 +54,7 @@ Pedro Figueiredo <me@pedrofigueiredo.org>
 
 =head1 COPYRIGHT AND LICENSE
 
-This software is copyright (c) 2013 by Amazon Digital Services, Leon Brocard, Brad Fitzpatrick, Pedro Figueiredo.
+This software is copyright (c) 2014 by Amazon Digital Services, Leon Brocard, Brad Fitzpatrick, Pedro Figueiredo.
 
 This is free software; you can redistribute it and/or modify it under
 the same terms as the Perl 5 programming language system itself.

@@ -42,3 +42,9 @@ on 'test' => sub {
 on 'configure' => sub {
   requires "ExtUtils::MakeMaker" => "6.30";
 };
+
+on 'develop' => sub {
+  requires "Test::CPAN::Changes" => "0.19";
+  requires "Test::CPAN::Meta" => "0";
+  requires "Test::Pod" => "1.41";
+};

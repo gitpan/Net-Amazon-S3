@@ -4,7 +4,7 @@ Net::Amazon::S3 - Use the Amazon S3 - Simple Storage Service
 
 # VERSION
 
-version 0.59
+version 0.60
 
 # SYNOPSIS
 
@@ -111,42 +111,42 @@ Create a new S3 client object. Takes some arguments:
 
 - aws\_access\_key\_id
 
-Use your Access Key ID as the value of the AWSAccessKeyId parameter
-in requests you send to Amazon Web Services (when required). Your
-Access Key ID identifies you as the party responsible for the
-request.
+    Use your Access Key ID as the value of the AWSAccessKeyId parameter
+    in requests you send to Amazon Web Services (when required). Your
+    Access Key ID identifies you as the party responsible for the
+    request.
 
 - aws\_secret\_access\_key
 
-Since your Access Key ID is not encrypted in requests to AWS, it
-could be discovered and used by anyone. Services that are not free
-require you to provide additional information, a request signature,
-to verify that a request containing your unique Access Key ID could
-only have come from you.
+    Since your Access Key ID is not encrypted in requests to AWS, it
+    could be discovered and used by anyone. Services that are not free
+    require you to provide additional information, a request signature,
+    to verify that a request containing your unique Access Key ID could
+    only have come from you.
 
-DO NOT INCLUDE THIS IN SCRIPTS OR APPLICATIONS YOU DISTRIBUTE. YOU'LL BE SORRY
+    DO NOT INCLUDE THIS IN SCRIPTS OR APPLICATIONS YOU DISTRIBUTE. YOU'LL BE SORRY
 
 - aws\_session\_token
 
-If you are using temporary credentials provided by the AWS Security Token
-Service, set the token here, and it will be added to the request in order to
-authenticate it.
+    If you are using temporary credentials provided by the AWS Security Token
+    Service, set the token here, and it will be added to the request in order to
+    authenticate it.
 
 - secure
 
-Set this to `1` if you want to use SSL-encrypted connections when talking
-to S3. Defaults to `0`.
+    Set this to `1` if you want to use SSL-encrypted connections when talking
+    to S3. Defaults to `0`.
 
 - timeout
 
-How many seconds should your script wait before bailing on a request to S3? Defaults
-to 30.
+    How many seconds should your script wait before bailing on a request to S3? Defaults
+    to 30.
 
 - retry
 
-If this library should retry upon errors. This option is recommended.
-This uses exponential backoff with retries after 1, 2, 4, 8, 16, 32 seconds,
-as recommended by Amazon. Defaults to off.
+    If this library should retry upon errors. This option is recommended.
+    This uses exponential backoff with retries after 1, 2, 4, 8, 16, 32 seconds,
+    as recommended by Amazon. Defaults to off.
 
 ## buckets
 
@@ -158,17 +158,17 @@ Takes a hashref:
 
 - bucket
 
-The name of the bucket you want to add
+    The name of the bucket you want to add
 
 - acl\_short (optional)
 
-See the set\_acl subroutine for documenation on the acl\_short options
+    See the set\_acl subroutine for documenation on the acl\_short options
 
 - location\_constraint (option)
 
-Sets the location constraint of the new bucket. If left unspecified, the
-default S3 datacenter location will be used. Otherwise, you can set it
-to 'EU' for a European data center - note that costs are different.
+    Sets the location constraint of the new bucket. If left unspecified, the
+    default S3 datacenter location will be used. Otherwise, you can set it
+    to 'EU' for a European data center - note that costs are different.
 
 Returns 0 on failure, Net::Amazon::S3::Bucket object on success
 
@@ -184,7 +184,7 @@ Takes either a [Net::Amazon::S3::Bucket](http://search.cpan.org/perldoc?Net::Ama
 
 - bucket
 
-The name of the bucket to remove
+    The name of the bucket to remove
 
 Returns false (and fails) if the bucket isn't empty.
 
@@ -200,63 +200,63 @@ MANDATORY
 
 - bucket
 
-The name of the bucket you want to list keys on
+    The name of the bucket you want to list keys on
 
 OPTIONAL
 
 - prefix
 
-Restricts the response to only contain results that begin with the
-specified prefix. If you omit this optional argument, the value of
-prefix for your query will be the empty string. In other words, the
-results will be not be restricted by prefix.
+    Restricts the response to only contain results that begin with the
+    specified prefix. If you omit this optional argument, the value of
+    prefix for your query will be the empty string. In other words, the
+    results will be not be restricted by prefix.
 
 - delimiter
 
-If this optional, Unicode string parameter is included with your
-request, then keys that contain the same string between the prefix
-and the first occurrence of the delimiter will be rolled up into a
-single result element in the CommonPrefixes collection. These
-rolled-up keys are not returned elsewhere in the response.  For
-example, with prefix="USA/" and delimiter="/", the matching keys
-"USA/Oregon/Salem" and "USA/Oregon/Portland" would be summarized
-in the response as a single "USA/Oregon" element in the CommonPrefixes
-collection. If an otherwise matching key does not contain the
-delimiter after the prefix, it appears in the Contents collection.
+    If this optional, Unicode string parameter is included with your
+    request, then keys that contain the same string between the prefix
+    and the first occurrence of the delimiter will be rolled up into a
+    single result element in the CommonPrefixes collection. These
+    rolled-up keys are not returned elsewhere in the response.  For
+    example, with prefix="USA/" and delimiter="/", the matching keys
+    "USA/Oregon/Salem" and "USA/Oregon/Portland" would be summarized
+    in the response as a single "USA/Oregon" element in the CommonPrefixes
+    collection. If an otherwise matching key does not contain the
+    delimiter after the prefix, it appears in the Contents collection.
 
-Each element in the CommonPrefixes collection counts as one against
-the MaxKeys limit. The rolled-up keys represented by each CommonPrefixes
-element do not.  If the Delimiter parameter is not present in your
-request, keys in the result set will not be rolled-up and neither
-the CommonPrefixes collection nor the NextMarker element will be
-present in the response.
+    Each element in the CommonPrefixes collection counts as one against
+    the MaxKeys limit. The rolled-up keys represented by each CommonPrefixes
+    element do not.  If the Delimiter parameter is not present in your
+    request, keys in the result set will not be rolled-up and neither
+    the CommonPrefixes collection nor the NextMarker element will be
+    present in the response.
 
 - max-keys
 
-This optional argument limits the number of results returned in
-response to your query. Amazon S3 will return no more than this
-number of results, but possibly less. Even if max-keys is not
-specified, Amazon S3 will limit the number of results in the response.
-Check the IsTruncated flag to see if your results are incomplete.
-If so, use the Marker parameter to request the next page of results.
-For the purpose of counting max-keys, a 'result' is either a key
-in the 'Contents' collection, or a delimited prefix in the
-'CommonPrefixes' collection. So for delimiter requests, max-keys
-limits the total number of list results, not just the number of
-keys.
+    This optional argument limits the number of results returned in
+    response to your query. Amazon S3 will return no more than this
+    number of results, but possibly less. Even if max-keys is not
+    specified, Amazon S3 will limit the number of results in the response.
+    Check the IsTruncated flag to see if your results are incomplete.
+    If so, use the Marker parameter to request the next page of results.
+    For the purpose of counting max-keys, a 'result' is either a key
+    in the 'Contents' collection, or a delimited prefix in the
+    'CommonPrefixes' collection. So for delimiter requests, max-keys
+    limits the total number of list results, not just the number of
+    keys.
 
 - marker
 
-This optional parameter enables pagination of large result sets.
-`marker` specifies where in the result set to resume listing. It
-restricts the response to only contain results that occur alphabetically
-after the value of marker. To retrieve the next page of results,
-use the last key from the current page of results as the marker in
-your next request.
+    This optional parameter enables pagination of large result sets.
+    `marker` specifies where in the result set to resume listing. It
+    restricts the response to only contain results that occur alphabetically
+    after the value of marker. To retrieve the next page of results,
+    use the last key from the current page of results as the marker in
+    your next request.
 
-See also `next_marker`, below.
+    See also `next_marker`, below.
 
-If `marker` is omitted,the first page of results is returned.
+    If `marker` is omitted,the first page of results is returned.
 
 Returns undef on error and a hashref of data on success:
 
@@ -277,26 +277,26 @@ Explanation of bits of that:
 
 - common\_prefixes
 
-If list\_bucket was requested with a delimiter, common\_prefixes will
-contain a list of prefixes matching that delimiter.  Drill down into
-these prefixes by making another request with the prefix parameter.
+    If list\_bucket was requested with a delimiter, common\_prefixes will
+    contain a list of prefixes matching that delimiter.  Drill down into
+    these prefixes by making another request with the prefix parameter.
 
 - is\_truncated
 
-B flag that indicates whether or not all results of your query were
-returned in this response. If your results were truncated, you can
-make a follow-up paginated request using the Marker parameter to
-retrieve the rest of the results.
+    B flag that indicates whether or not all results of your query were
+    returned in this response. If your results were truncated, you can
+    make a follow-up paginated request using the Marker parameter to
+    retrieve the rest of the results.
 
 - next\_marker
 
-A convenience element, useful when paginating with delimiters. The
-value of `next_marker`, if present, is the largest (alphabetically)
-of all key names and all CommonPrefixes prefixes in the response.
-If the `is_truncated` flag is set, request the next page of results
-by setting `marker` to the value of `next_marker`. This element
-is only present in the response if the `delimiter` parameter was
-sent with the request.
+    A convenience element, useful when paginating with delimiters. The
+    value of `next_marker`, if present, is the largest (alphabetically)
+    of all key names and all CommonPrefixes prefixes in the response.
+    If the `is_truncated` flag is set, request the next page of results
+    by setting `marker` to the value of `next_marker`. This element
+    is only present in the response if the `delimiter` parameter was
+    sent with the request.
 
 Each key is a hashref that looks like this:
 
@@ -357,16 +357,16 @@ a real test unless you set these three environment variables:
 
 - AMAZON\_S3\_EXPENSIVE\_TESTS
 
-Doesn't matter what you set it to. Just has to be set
+    Doesn't matter what you set it to. Just has to be set
 
 - AWS\_ACCESS\_KEY\_ID
 
-Your AWS access key
+    Your AWS access key
 
 - AWS\_ACCESS\_KEY\_SECRET
 
-Your AWS sekkr1t passkey. Be forewarned that setting this environment variable
-on a shared system might leak that information to another user. Be careful.
+    Your AWS sekkr1t passkey. Be forewarned that setting this environment variable
+    on a shared system might leak that information to another user. Be careful.
 
 # AUTHOR
 
@@ -386,7 +386,7 @@ Pedro Figueiredo <me@pedrofigueiredo.org>
 
 # COPYRIGHT AND LICENSE
 
-This software is copyright (c) 2013 by Amazon Digital Services, Leon Brocard, Brad Fitzpatrick, Pedro Figueiredo.
+This software is copyright (c) 2014 by Amazon Digital Services, Leon Brocard, Brad Fitzpatrick, Pedro Figueiredo.
 
 This is free software; you can redistribute it and/or modify it under
 the same terms as the Perl 5 programming language system itself.
